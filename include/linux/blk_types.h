@@ -346,6 +346,13 @@ enum req_flag_bits {
 	/* for driver use */
 	__REQ_DRV,
 	__REQ_SWAP,		/* swapping request. */
+
+	/* Android specific flags */
+	__REQ_NOENCRYPT,	/*
+				 * ok to not encrypt (already encrypted at fs
+				 * level)
+				 */
+
 	__REQ_NR_BITS,		/* stops here */
 };
 
@@ -363,6 +370,7 @@ enum req_flag_bits {
 #define REQ_PREFLUSH		(1ULL << __REQ_PREFLUSH)
 #define REQ_RAHEAD		(1ULL << __REQ_RAHEAD)
 #define REQ_BACKGROUND		(1ULL << __REQ_BACKGROUND)
+#define REQ_NOENCRYPT		(1ULL << __REQ_NOENCRYPT)
 #define REQ_NOWAIT		(1ULL << __REQ_NOWAIT)
 
 #define REQ_NOUNMAP		(1ULL << __REQ_NOUNMAP)
