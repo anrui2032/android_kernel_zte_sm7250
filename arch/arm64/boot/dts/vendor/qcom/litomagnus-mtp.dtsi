@@ -60,7 +60,7 @@
 
 &lito_snd {
 	qcom,model = "lito-orchidmtp-snd-card";
-	qcom,wsa-max-devs = <2>;
+	qcom,wsa-max-devs = <0>;
 	qcom,wsa-devs = <&wsa883x_0221>, <&wsa883x_0222>;
 	qcom,wsa-aux-dev-prefix = "SpkrLeft", "SpkrRight";
 };
@@ -79,6 +79,17 @@
 
 &pm7250b_qg {
 	qcom,use-cp-iin-sns;
+	qcom,qg-ext-sns;
+	qcom,rbat-conn-mohm = <2>;
+	qcom,cl-min-start-soc = <1>;
+	qcom,cl-max-start-soc = <30>;
+	qcom,cl-min-temp = <150>;
+	qcom,cl-max-temp = <450>;
+	qcom,cl-max-increment = <20>;
+	qcom,cl-max-decrement = <20>;
+	qcom,cl-min-limit = <300>;
+	qcom,cl-max-limit = <0>;
+	qcom,ignore-shutdown-soc-secs = <604800>;
 };
 
 &pm7250b_vadc {
@@ -120,7 +131,7 @@
 	io-channels = <&pm7250b_vadc ADC_AMUX_THM2>;
 	qcom,parallel-input-mode = <1>; /* USBIN */
 	qcom,parallel-output-mode = <2>; /* VBAT */
-	qcom,min-ilim-ua = <1000000>;
+	qcom,div2-cp-min-ilim-ua = <750000>;
 	status = "ok";
 };
 

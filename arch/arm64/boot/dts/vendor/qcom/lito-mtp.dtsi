@@ -1,9 +1,10 @@
 #include <dt-bindings/gpio/gpio.h>
 #include "lito-audio-overlay.dtsi"
 #include "lito-pmic-overlay.dtsi"
-#include "camera/lito-camera-sensor-mtp.dtsi"
+// #include "camera/lito-camera-sensor-mtp.dtsi"
 #include "lito-sde-display.dtsi"
 #include "lito-thermal-overlay.dtsi"
+#include "touch-backlight-tenet.dtsi"
 
 &soc {
 	gpio_keys {
@@ -39,6 +40,7 @@
 		qcom,batt-id-range-pct = <15>;
 		#include "qg-batterydata-alium-3600mah.dtsi"
 		#include "qg-batterydata-atl466271_3300mAh.dtsi"
+		#include "456579_ZTE_ATL_4200mAH_PM7250B.dtsi"
 	};
 };
 
@@ -108,11 +110,15 @@
 	qcom,vdd-io-voltage-level = <1800000 2950000>;
 	qcom,vdd-io-current-level = <0 22000>;
 
-	pinctrl-names = "active", "sleep";
-	pinctrl-0 = <&sdc2_clk_on  &sdc2_cmd_on &sdc2_data_on &sdc2_cd_on>;
-	pinctrl-1 = <&sdc2_clk_off &sdc2_cmd_off &sdc2_data_off &sdc2_cd_off>;
+	pinctrl-names = "default", "active", "sleep";
+	pinctrl-0 = <&uim2_nm_sw_default &uim2_vcc_en_default>;
+	pinctrl-1 = <&sdc2_clk_on  &sdc2_cmd_on &sdc2_data_on &sdc2_cd_on>;
+	pinctrl-2 = <&sdc2_clk_off &sdc2_cmd_off &sdc2_data_off &sdc2_cd_off>;
 
-	cd-gpios = <&tlmm 69 GPIO_ACTIVE_LOW>;
+	cd-gpios = <&tlmm 69 GPIO_ACTIVE_HIGH>;
+
+	uim2_nm_sw_gpios = <&pm8150l_gpios 8 GPIO_ACTIVE_LOW>;
+	uim2_vcc_en_gpios = <&pm8150l_gpios 9 GPIO_ACTIVE_HIGH>;
 
 	status = "ok";
 };
@@ -208,6 +214,12 @@
 	qcom,smb-internal-pull-kohm = <0>;
 	qcom,en-skin-therm-mitigation;
 	qcom,hvdcp3-standalone-config;
+	qcom,fcc-max-ua = <8000000>;
+	qcom,fv-max-uv = <4480000>;
+	qcom,usb-icl-ua = <4000000>;
+	qcom,chg-term-src = <1>;
+	qcom,chg-term-current-ma = <(-800)>;
+	qcom,lpd-disable;
 };
 
 &pm7250b_qg {
@@ -217,7 +229,7 @@
 	io-channel-names = "batt-therm",
 			   "batt-id";
 	qcom,battery-data = <&mtp_batterydata>;
-	qcom,qg-iterm-ma = <100>;
+	qcom,qg-iterm-ma = <1800>;
 	qcom,hold-soc-while-full;
 	qcom,linearize-soc;
 	qcom,cl-feedback-on;
@@ -251,8 +263,8 @@
 		st,x-flip = <1>;
 		st,y-flip = <1>;
 		st,power_on_suspend;
-		panel = <&dsi_sw43404_amoled_cmd &dsi_sw43404_amoled_video
-			 &dsi_sw43404_amoled_fhd_plus_cmd>;
+		panel = <&dsi_visionox_rm692a4_otpt3_cmd &dsi_visionox_rm692a4_nootp_cmd
+			 &dsi_visionox_rm692a4_amoled_fhd_cmd>;
 	};
 };
 
@@ -287,7 +299,7 @@
 };
 
 &sde_dsi {
-	qcom,dsi-default-panel = <&dsi_sw43404_amoled_video>;
+	qcom,dsi-default-panel = <&dsi_visionox_rm692e1_amoled_fhd_cmd>;
 };
 
 &qupv3_se0_i2c {

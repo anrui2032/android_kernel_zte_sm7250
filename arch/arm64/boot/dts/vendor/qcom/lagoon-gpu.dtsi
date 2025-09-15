@@ -104,6 +104,8 @@
 
 		#cooling-cells = <2>;
 
+		qcom,tzone-names = "gpuss-0-usr", "gpuss-1-usr";
+
 		/* Bus Scale Settings */
 		qcom,gpubw-dev = <&gpubw>;
 		qcom,bus-control;

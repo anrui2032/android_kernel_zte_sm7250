@@ -7,3 +7,7 @@
 	compatible = "qcom,lito";
 	qcom,board-id = <0 0>;
 };
+
+&pm8008_regulators {
+    /delete-property/ vdd_l6-supply;
+};

@@ -30,9 +30,11 @@
 			#size-cells = <1>;
 			#cooling-cells = <2>;
 
-			qcom,thermal-mitigation = <5400000 4500000 4000000
-				3500000 3000000 2500000 2000000 1500000
-				1000000 500000>;
+			qcom,thermal-mitigation = <8000000 8000000 8000000 8000000 6000000 5000000 4000000 3000000 2500000 1000000
+				500000 8000000 7000000 6000000 5000000 4000000 3000000 2500000 1500000 1000000
+				500000 300000 3000000 2000000 1750000 1500000 1250000 1000000 750000 500000
+				400000 300000 100000 300000 300000 300000 300000 300000 300000 300000
+				300000 100000 100000 100000>;
 			qcom,pmic-revid = <&pm7250b_revid>;
 
 			qcom,chgr@1000 {
@@ -224,12 +226,14 @@
 			#address-cells = <1>;
 			#size-cells = <1>;
 
-			qcom,vbatt-cutoff-mv = <3200>;
+			qcom,vbatt-cutoff-mv = <3400>;
 			qcom,vbatt-low-mv = <3300>;
 			qcom,vbatt-low-cold-mv = <3700>;
 			qcom,vbatt-empty-mv = <3000>;
 			qcom,vbatt-empty-cold-mv = <3000>;
 			qcom,s3-entry-fifo-length = <2>;
+			qcom,s3-entry-ibat-ua = <35000>;
+			qcom,s3-exit-ibat-ua = <55000>;
 
 			qcom,pmic-revid = <&pm7250b_revid>;
 
@@ -621,6 +625,7 @@
 	};
 
 	soc {
+		disable-thermal-zone;
 		polling-delay-passive = <100>;
 		polling-delay = <0>;
 		thermal-governor = "low_limits_cap";

@@ -9,9 +9,59 @@
 };
 
 &pm8150_gpios {
-	interrupts = <0x0 0xc3 0x0 IRQ_TYPE_NONE>;
-	interrupt-names = "pm8150_gpio4";
-	qcom,gpios-disallowed = <1 2 3 5 6 7 8 9 10>;
+	interrupts = <0x0 0xc3 0x0 IRQ_TYPE_NONE 0x0 0xc5 0x0 IRQ_TYPE_NONE 0x0 0xc6 0x0 IRQ_TYPE_NONE 0x0 0xc8 0x0 IRQ_TYPE_NONE>;
+	interrupt-names = "pm8150_gpio4", "pm8150_gpio6", "pm8150_gpio7", "pm8150_gpio9";
+	qcom,gpios-disallowed = <1 2 3 5 8 10>;
+	gpio6_dig_out {
+		gpio6_dig_out_enable: gpio6_dig_out_enable {
+			pins = "gpio6";
+			function = "normal";
+			bias-pull-up;
+			power-source = <0>;
+			output-high;
+		};
+
+		gpio6_dig_out_disable: gpio6_dig_out_disable {
+			pins = "gpio6";
+			function = "normal";
+			power-source = <0>;
+			bias-high-impedance;
+		};
+	};
+
+	gpio7_dig_out {
+		gpio7_dig_out_enable: gpio7_dig_out_enable {
+			pins = "gpio7";
+			function = "normal";
+			bias-pull-up;
+			power-source = <0>;
+			output-high;
+		};
+
+		gpio7_dig_out_disable: gpio7_dig_out_disable {
+			pins = "gpio7";
+			function = "normal";
+			power-source = <0>;
+			bias-high-impedance;
+		};
+	};
+
+	gpio9_dig_out {
+		gpio9_dig_out_enable: gpio9_dig_out_enable {
+			pins = "gpio9";
+			function = "normal";
+			bias-pull-up;
+			power-source = <0>;
+			output-high;
+		};
+
+		gpio9_dig_out_disable: gpio9_dig_out_disable {
+			pins = "gpio9";
+			function = "normal";
+			power-source = <0>;
+			bias-high-impedance;
+		};
+	};
 };
 
 &pm8150l_gpios {
@@ -34,6 +84,39 @@
 			"pm8150l_gpio7", "pm8150l_gpio8",
 			"pm8150l_gpio9", "pm8150l_gpio10",
 			"pm8150l_gpio11", "pm8150l_gpio12";
+
+	gpio4_dig_out {
+		gpio4_dig_out_enable: gpio4_dig_out_enable {
+			pins = "gpio4";
+			function = "normal";
+			bias-pull-up;
+			power-source = <0>;
+			output-high;
+		};
+
+		gpio4_dig_out_disable: gpio4_dig_out_disable {
+			pins = "gpio4";
+			function = "normal";
+			power-source = <0>;
+			bias-high-impedance;
+		};
+	};
+
+	gpio7_dig_out2 {
+		gpio7_dig_out_enable2: gpio7_dig_out_enable2 {
+			pins = "gpio7";
+			function = "normal";
+			bias-pull-up;
+			power-source = <1>;
+		};
+
+		gpio7_dig_out_disable2: gpio7_dig_out_disable2 {
+			pins = "gpio7";
+			function = "normal";
+			bias-pull-down;
+			power-source = <1>;
+		};
+	};
 
 	key_vol_up {
 		key_vol_up_default: key_vol_up_default {
@@ -321,6 +404,12 @@
 				hysteresis = <1000>;
 				type = "passive";
 			};
+
+			active-config1 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
 		};
 	};
 
@@ -421,6 +510,26 @@
 			power-source = <0>;
 			bias-disable;
 			output-high;
+		};
+	};
+
+	uim2_nm_sw {
+		uim2_nm_sw_default: uim2_nm_sw_default {
+			pins = "gpio8";
+			function = "normal";
+			power-source = <1>;
+			output-low;
+			input-disable;
+		};
+	};
+
+	uim2_vcc_en {
+		uim2_vcc_en_default: uim2_vcc_en_default {
+			pins = "gpio9";
+			function = "normal";
+			power-source = <1>;
+			output-high;
+			input-disable;
 		};
 	};
 };

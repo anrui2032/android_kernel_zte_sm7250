@@ -265,6 +265,48 @@
 			};
 		};
 
+		fp_shutdown_active: active {
+			mux {
+				pins = "gpio56";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio56";
+				drive-strength = <0x8>;
+				bias-disable;
+				output-high;
+			};
+		};
+
+		fp_shutdown_suspend: suspend {
+			mux {
+				pins = "gpio56";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio56";
+				drive-strength = <0x8>;
+				bias-disable;
+				output-low;
+			};
+		};
+
+		goodix_pwr_active: goodix_pwr_active {
+			mux {
+				pins = "gpio5";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio5";
+				drive-strength = <0x8>;
+				bias-disable;
+				output-high;
+			};
+		};
+
 		ufs_dev_reset_assert: ufs_dev_reset_assert {
 			config {
 				pins = "ufs_reset";
@@ -431,7 +473,7 @@
 			config {
 				pins = "gpio69";
 				drive-strength = <2>;
-				bias-pull-up;
+				bias-disable;
 			};
 		};
 
@@ -481,31 +523,31 @@
 
 		spkr_2_sd_n {
 			spkr_2_sd_n_sleep: spkr_2_sd_n_sleep {
-				mux {
-					pins = "gpio65";
-					function = "gpio";
-				};
+				// mux {
+				// 	pins = "gpio65";
+				// 	function = "gpio";
+				// };
 
-				config {
-					pins = "gpio65";
-					drive-strength = <2>;   /* 2 mA */
-					bias-pull-down;
-					input-enable;
-				};
+				// config {
+				// 	pins = "gpio65";
+				// 	drive-strength = <2>;   /* 2 mA */
+				// 	bias-pull-down;
+				// 	input-enable;
+				// };
 			};
 
 			spkr_2_sd_n_active: spkr_2_sd_n_active {
-				mux {
-					pins = "gpio65";
-					function = "gpio";
-				};
+				// mux {
+				// 	pins = "gpio65";
+				// 	function = "gpio";
+				// };
 
-				config {
-					pins = "gpio65";
-					drive-strength = <16>;   /* 16 mA */
-					bias-disable;
-					output-high;
-				};
+				// config {
+				// 	pins = "gpio65";
+				// 	drive-strength = <16>;   /* 16 mA */
+				// 	bias-disable;
+				// 	output-high;
+				// };
 			};
 		};
 

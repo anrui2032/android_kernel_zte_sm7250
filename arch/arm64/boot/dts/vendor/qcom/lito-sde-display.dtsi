@@ -19,6 +19,11 @@
 #include "dsi-panel-sim-dualmipi-dsc375-cmd.dtsi"
 #include "dsi-panel-sim-sec-hd-cmd.dtsi"
 #include "dsi-panel-rm69299-visionox-fhd-plus-video.dtsi"
+#include "dsi-panel-zte-visionox-rm692a4-otpt3-cmd.dtsi"
+#include "dsi-panel-zte-visionox-rm692a4-nootp-cmd.dtsi"
+#include "dsi-panel-zte-visionox-rm692a4-amoled-fhd-cmd.dtsi"
+#include "dsi-panel-zte-visionox-rm692e1-amoled-fhd-cmd.dtsi"
+#include "dsi-panel-zte-visionox-rm692e1-no_id5-amoled-fhd-cmd.dtsi"
 #include "dsi-panel-r66451-dsc-fhd-plus-144hz-cmd.dtsi"
 #include <dt-bindings/clock/mdss-7nm-pll-clk.h>
 
@@ -166,7 +171,7 @@
 		ibb-supply = <&ibb_vreg>;
 
 		qcom,mdp = <&mdss_mdp>;
-		qcom,dsi-default-panel = <&dsi_sw43404_amoled_video>;
+		qcom,dsi-default-panel = <&dsi_visionox_rm692e1_amoled_fhd_cmd>;
 	};
 
 	sde_dsi1: qcom,dsi-display-secondary {
@@ -581,26 +586,26 @@
 };
 
 &dsi_nt35695b_truly_fhd_video {
-	qcom,esd-check-enabled;
-	qcom,mdss-dsi-panel-status-check-mode = "reg_read";
-	qcom,mdss-dsi-panel-status-command = [06 01 00 01 00 00 01 0a];
-	qcom,mdss-dsi-panel-status-command-state = "dsi_hs_mode";
-	qcom,mdss-dsi-panel-status-value = <0x9c>;
-	qcom,mdss-dsi-panel-on-check-value = <0x9c>;
-	qcom,mdss-dsi-panel-status-read-length = <1>;
-	qcom,dsi-supported-dfps-list = <60 55 48>;
-	qcom,mdss-dsi-pan-enable-dynamic-fps;
-	qcom,mdss-dsi-pan-fps-update = "dfps_immediate_porch_mode_vfp";
-	qcom,mdss-dsi-min-refresh-rate = <48>;
-	qcom,mdss-dsi-max-refresh-rate = <60>;
+	qcom,mdss-dsi-te-pin-select = <1>;
+	qcom,mdss-dsi-wr-mem-start = <44>;
+	qcom,mdss-dsi-wr-mem-continue = <60>;
+	qcom,mdss-dsi-te-dcs-command = <1>;
+	qcom,mdss-dsi-te-check-enable;
+	qcom,mdss-dsi-te-using-te-pin;
 	qcom,dsi-select-clocks = "mux_byte_clk0", "mux_pixel_clk0";
 	qcom,dsi-select-sec-clocks = "mux_byte_clk1", "mux_pixel_clk1";
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
+	qcom,mdss-brightness-max-level = <255>;
+	qcom,platform-te-gpio = <&tlmm 10 0>;
+	qcom,platform-reset-gpio = <&pm8150l_gpios 3 0>;
+	qcom,ulps-enabled;
 	qcom,mdss-dsi-display-timings {
 		timing@0 {
-			qcom,mdss-dsi-panel-phy-timings = [00 1e 08 07 24 22
-				08 08 05 02 04 00 19 17];
+			qcom,mdss-dsi-panel-phy-timings = [00 23 09 09 26 24
+				09 09 06 02 04 00 1d 19];
 			qcom,display-topology = <1 0 1>;
 			qcom,default-topology-index = <0>;
+			qcom,mdss-dsi-panel-clockrate = <1050000000>;
 		};
 	};
 };
