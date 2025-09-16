@@ -422,3 +422,60 @@ config DRM_PANEL_ORIENTATION_QUIRKS
 config DRM_LIB_RANDOM
 	bool
 	default n
+
+# zte function macro control
+config ZTE_LCD_COMMON_FUNCTION
+	bool "Enable zte lcd function"
+	default y
+	help
+	  Choose this option if use zte lcd function.
+
+config ZTE_LCD_BACKLIGHT_LEVEL_CURVE
+	depends on ZTE_LCD_COMMON_FUNCTION
+	bool "Support for ZTE lcd backlight curve"
+
+config ZTE_LCD_HBM_CTRL
+	depends on ZTE_LCD_COMMON_FUNCTION
+	bool "Support for ZTE lcd hbm control"
+
+config ZTE_LCD_SEC_PANEL_CTRL
+	depends on ZTE_LCD_COMMON_FUNCTION
+	bool "Support for ZTE Sec panel control"
+
+config ZTE_LCD_COLOR_GAMUT_CTRL
+	depends on ZTE_LCD_COMMON_FUNCTION
+	bool "Support for color gamut control"
+
+config ZTE_LCD_AOD_BRIGHTNESS_CTRL
+	depends on ZTE_LCD_COMMON_FUNCTION
+	bool "Support for ZTE lcd aod brightness control"
+
+config ZTE_LCD_REG_DEBUG
+	depends on ZTE_LCD_COMMON_FUNCTION
+	bool "Support for ZTE lcd reg read"
+
+config ZTE_LCD_AOD_BACKLIGHT_FLASH
+	depends on ZTE_LCD_COMMON_FUNCTION
+	bool "Support for ZTE lcd aod backlight flash"
+
+config ZTE_LCD_VSP_VSN_VALUE_BY_I2C
+	bool "Enable zte lcd voltage value modification by I2C"
+	default n
+	help
+	  Choose this option if use voltage modification by I2C.
+
+config ZTE_LCD_GPIO_CTRL_POWER
+	bool "Enable zte lcd voltage by GPIO "
+	default n
+	help
+	  Choose this option to enable lcd power by GPIO.
+
+config ZTE_LCD_FIX_REDRAW_VIEWS_TIANMA_Z6650S
+	depends on ZTE_LCD_COMMON_FUNCTION
+	bool "Delay 100ms for Z6650S TianMa panel "
+
+config ZTE_LCD_E1_PANEL
+	bool "fix FTM Problem in E1 panel "
+	default n
+	help
+	  Choose this option to fix FTM problem.
