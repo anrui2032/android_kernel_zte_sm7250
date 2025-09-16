@@ -102,6 +102,8 @@ struct clk_core {
 #ifdef CONFIG_DEBUG_FS
 	struct dentry		*dentry;
 	struct hlist_node	debug_node;
+#else
+	struct hlist_node	debug_node;
 #endif
 	struct kref		ref;
 	struct clk_vdd_class	*vdd_class;
@@ -3222,7 +3224,7 @@ EXPORT_SYMBOL_GPL(clk_set_flags);
 
 static struct dentry *rootdir;
 static int inited = 0;
-static u32 debug_suspend;
+static u32 debug_suspend = 1; /* zte_pm */
 static DEFINE_MUTEX(clk_debug_lock);
 static HLIST_HEAD(clk_debug_list);
 
@@ -3951,6 +3953,16 @@ void clock_debug_print_enabled(void)
 }
 EXPORT_SYMBOL_GPL(clock_debug_print_enabled);
 
+/* zte_pm show sleep clk */
+void debug_suspend_enabled(void)
+{
+	debug_suspend = 1;
+}
+void debug_suspend_disable(void)
+{
+	debug_suspend = 0;
+}
+
 /**
  * clk_debug_init - lazily populate the debugfs clk directory
  *
@@ -4015,22 +4027,115 @@ static int __init clk_debug_init(void)
 }
 late_initcall(clk_debug_init);
 #else
-static inline void clk_debug_register(struct clk_core *core) { }
+static u32 debug_suspend = 1; /* zte_pm */
+static DEFINE_MUTEX(clk_debug_lock);
+static HLIST_HEAD(clk_debug_list);
+
+static inline void clk_debug_register(struct clk_core *core)
+{
+	hlist_add_head(&core->debug_node, &clk_debug_list);
+}
 static inline void clk_debug_reparent(struct clk_core *core,
 				      struct clk_core *new_parent)
 {
 }
 static inline void clk_debug_unregister(struct clk_core *core)
 {
+	hlist_del_init(&core->debug_node);
 }
 
 void clk_debug_print_hw(struct clk_core *clk, struct seq_file *f)
 {
 }
 
+/* zte_pm show enabled clk start */
+void debug_suspend_enabled(void)
+{
+	debug_suspend = 1;
+}
+void debug_suspend_disable(void)
+{
+	debug_suspend = 0;
+}
+
+#define clock_debug_output(m, c, fmt, ...)		\
+do {							\
+	if (m)						\
+		seq_printf(m, fmt, ##__VA_ARGS__);	\
+	else if (c)					\
+		pr_cont(fmt, ##__VA_ARGS__);		\
+	else						\
+		pr_info(fmt, ##__VA_ARGS__);		\
+} while (0)
+
+static int clock_debug_print_clock(struct clk_core *c, struct seq_file *s)
+{
+	char *start = "";
+	struct clk *clk;
+
+	if (!c || !c->prepare_count)
+		return 0;
+
+	clk = c->hw->clk;
+
+	clock_debug_output(s, 0, "    ");
+
+	do {
+		if (clk->core->vdd_class)
+			clock_debug_output(s, 1, "%s%s:%u:%u [%ld, %d]", start,
+					clk->core->name,
+					clk->core->prepare_count,
+					clk->core->enable_count,
+					clk->core->rate,
+				clk_find_vdd_level(clk->core, clk->core->rate));
+		else
+			clock_debug_output(s, 1, "%s%s:%u:%u [%ld]", start,
+					clk->core->name,
+					clk->core->prepare_count,
+					clk->core->enable_count,
+					clk->core->rate);
+		start = " -> ";
+	} while ((clk = clk_get_parent(clk)));
+
+	clock_debug_output(s, 1, "\n");
+
+	return 1;
+}
+
+/*
+ * clock_debug_print_enabled_clocks() - Print names of enabled clocks
+ */
+static void clock_debug_print_enabled_clocks(struct seq_file *s)
+{
+	struct clk_core *core;
+	int cnt = 0;
+
+	if (!mutex_trylock(&clk_debug_lock))
+		return;
+
+	clock_debug_output(s, 0, "Enabled clocks:\n");
+
+	hlist_for_each_entry(core, &clk_debug_list, debug_node)
+		cnt += clock_debug_print_clock(core, s);
+
+	mutex_unlock(&clk_debug_lock);
+
+	if (cnt)
+		clock_debug_output(s, 0, "Enabled clock count: %d\n", cnt);
+	else
+		clock_debug_output(s, 0, "No clocks enabled.\n");
+}
+
 void clock_debug_print_enabled(void)
 {
+	pr_info("clock debug_suspend = %d\n", debug_suspend);
+	if (likely(!debug_suspend))
+		return;
+
+	clock_debug_print_enabled_clocks(NULL);
 }
+
+/* zte_pm show enabled clk end */
 #endif
 
 /**
