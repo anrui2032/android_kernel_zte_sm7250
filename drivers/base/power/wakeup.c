@@ -14,6 +14,7 @@
 #include <linux/suspend.h>
 #include <linux/seq_file.h>
 #include <linux/debugfs.h>
+#include <linux/proc_fs.h>
 #include <linux/pm_wakeirq.h>
 #include <linux/irq.h>
 #include <linux/irqdesc.h>
@@ -24,6 +25,25 @@
 #include <linux/irqdesc.h>
 
 #include "power.h"
+
+/* zte_pm ++++ */
+#include "soc/qcom/socinfo.h"
+/*
+ * notes: debug-way
+ * step1: echo -n "wakelockname" >
+ * /sys/module/wakeup/parameters/wakelock_debug
+ * step2: cat /proc/kmsg
+ * step3: echo -n "NULL" to cancel debug
+ */
+/* ZTE_PM_WAKELOCK add to identify who enable/disable clks */
+#define ZTE_WAKELOCK_DEBUG
+#include <linux/module.h>
+
+#ifdef ZTE_WAKELOCK_DEBUG
+char *wakelock_debug_zte;
+module_param_named(wakelock_debug, wakelock_debug_zte, charp, 0600);
+#endif
+/* zte_pm ---- */
 
 #ifndef CONFIG_SUSPEND
 suspend_state_t pm_suspend_target_state;
@@ -59,6 +79,26 @@ static void split_counters(unsigned int *cnt, unsigned int *inpr)
 	*cnt = (comb >> IN_PROGRESS_BITS);
 	*inpr = comb & MAX_IN_PROGRESS;
 }
+/* zte_pm ++++ */
+#ifndef DUMP_WAKELOCK
+#define DUMP_WAKELOCK
+#endif
+
+#ifdef DUMP_WAKELOCK
+#include <linux/timer.h>
+#include <linux/delay.h>
+#include <linux/module.h>
+
+/*
+ * notes: open-way
+ * echo 1 > /sys/module/wakeup/parameters/ws_debug_mask
+ */
+static int ws_debug_mask;
+module_param(ws_debug_mask, int, 0644);
+static void zte_dumplock_timer_func(struct timer_list *unused);
+static DEFINE_TIMER(dumplock_timer, zte_dumplock_timer_func);
+#endif
+/* zte_pm ---- */
 
 /* A preserved old value of the events counter. */
 static unsigned int saved_count;
@@ -554,6 +594,20 @@ static void wakeup_source_activate(struct wakeup_source *ws)
 	/* Increment the counter of events in progress. */
 	cec = atomic_inc_return(&combined_event_count);
 
+/* zte_pm ++++ */
+#ifdef DUMP_WAKELOCK
+	if (ws_debug_mask != 0)
+		pr_info("ZTE_PM_LOCK active %s\n", ws->name);
+#endif
+
+#ifdef ZTE_WAKELOCK_DEBUG
+	if (wakelock_debug_zte) {
+		if (strnstr(ws->name, wakelock_debug_zte, sizeof(wakelock_debug_zte)))
+			WARN(1, "ZTE_PM_WAKELOCK acquire wakelock %s:\n", ws->name);
+	}
+#endif
+/* zte_pm ---- */
+
 	trace_wakeup_source_activate(ws->name, cec);
 }
 
@@ -683,6 +737,19 @@ static void wakeup_source_deactivate(struct wakeup_source *ws)
 	 * couter of wakeup events in progress simultaneously.
 	 */
 	cec = atomic_add_return(MAX_IN_PROGRESS, &combined_event_count);
+/* zte_pm ++++ */
+#ifdef DUMP_WAKELOCK
+	if (ws_debug_mask != 0)
+		pr_info("ZTE_PM_LOCK deactive %s\n", ws->name);
+#endif
+
+#ifdef ZTE_WAKELOCK_DEBUG
+	if (wakelock_debug_zte) {
+		if (strnstr(ws->name, wakelock_debug_zte, sizeof(wakelock_debug_zte)))
+			WARN(1, "ZTE_PM_WAKELOCK release wakelock %s:\n", ws->name);
+	}
+#endif
+/* zte_pm ---- */
 	trace_wakeup_source_deactivate(ws->name, cec);
 
 	split_counters(&cnt, &inpr);
@@ -861,7 +928,7 @@ void pm_print_active_wakeup_sources(void)
 	srcuidx = srcu_read_lock(&wakeup_srcu);
 	list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
 		if (ws->active) {
-			pr_debug("active wakeup source: %s\n", ws->name);
+			pr_info("WAKE_LOCK:active wakeup source: %s\n", ws->name);
 			active = 1;
 		} else if (!active &&
 			   (!last_activity_ws ||
@@ -872,7 +939,7 @@ void pm_print_active_wakeup_sources(void)
 	}
 
 	if (!active && last_activity_ws)
-		pr_debug("last active wakeup source: %s\n",
+		pr_info("WAKE_LOCK:last active wakeup source: %s\n",
 			last_activity_ws->name);
 	srcu_read_unlock(&wakeup_srcu, srcuidx);
 }
@@ -903,6 +970,8 @@ bool pm_wakeup_pending(void)
 	raw_spin_unlock_irqrestore(&events_lock, flags);
 
 	if (ret) {
+		pr_info("PM: Wakeup pending, aborting suspend\n");
+		pm_print_active_wakeup_sources();
 		pm_get_active_wakeup_sources(suspend_abort,
 					     MAX_SUSPEND_ABORT_LEN);
 		log_suspend_abort_reason(suspend_abort);
@@ -951,6 +1020,31 @@ void pm_system_irq_wakeup(unsigned int irq_number)
 	}
 }
 
+/* zte_pm ++++ */
+#ifdef DUMP_WAKELOCK
+/* period is dump_period seconds,In FTM mode,we should set it to 10s*/
+static int dump_period = 120;
+module_param(dump_period, int, 0644);
+void dump_wakeup_source_zte(void)
+{
+	struct wakeup_source *ws;
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
+		if (ws->active)
+			pr_info("zte_dump wakesource %s is active\n", ws->name);
+	}
+	rcu_read_unlock();
+}
+
+static void zte_dumplock_timer_func(struct timer_list *unused)
+{
+	pr_info("zte: show wakeup_source every 2mins:");
+	dump_wakeup_source_zte();
+	mod_timer(&dumplock_timer, jiffies + msecs_to_jiffies(dump_period*1000));
+}
+#endif
+/* zte_pm ---- */
 /**
  * pm_get_wakeup_count - Read the number of registered wakeup events.
  * @count: Address to store the value at.
@@ -974,9 +1068,15 @@ bool pm_get_wakeup_count(unsigned int *count, bool block)
 			prepare_to_wait(&wakeup_count_wait_queue, &wait,
 					TASK_INTERRUPTIBLE);
 			split_counters(&cnt, &inpr);
+#ifdef DUMP_WAKELOCK /* zte_pm ++++ */
+				pr_info("zte: %s for(;;)cnt=%d wakeupsource cnt= %d,show ws:\n",
+						__func__, cnt, inpr);
+				dump_wakeup_source_zte();
+#endif
+
 			if (inpr == 0 || signal_pending(current))
 				break;
-			pm_print_active_wakeup_sources();
+			/* pm_print_active_wakeup_sources(); */ /* zte_pm */
 			schedule();
 		}
 		finish_wait(&wakeup_count_wait_queue, &wait);
@@ -1042,7 +1142,11 @@ void pm_wakep_autosleep_enabled(bool set)
 }
 #endif /* CONFIG_PM_AUTOSLEEP */
 
+#if defined(CONFIG_DEBUG_FS)
 static struct dentry *wakeup_sources_stats_dentry;
+#else
+static struct proc_dir_entry *wakeup_sources_stats_dentry;
+#endif
 
 /**
  * print_wakeup_source_stats - Print wakeup source statistics information.
@@ -1173,8 +1277,29 @@ static const struct file_operations wakeup_sources_stats_fops = {
 
 static int __init wakeup_sources_debugfs_init(void)
 {
+/* ZTE_PM ++++ */
+#ifdef DUMP_WAKELOCK
+	/*
+	 * Support for FTM & RECOVERY mode
+	 * 0: Normal mode
+	 * 1: FTM mode
+	 */
+	if (socinfo_get_ftm_flag() == 1) {
+		dump_period = 5;
+		pr_info("ZTE_PM set dump wakesource period to 5s  in FTM mode");
+	}
+	mod_timer(&dumplock_timer, jiffies + msecs_to_jiffies(dump_period*1000));
+#endif
+/* ZTE_PM ---- */
+
+#if defined(CONFIG_DEBUG_FS)
 	wakeup_sources_stats_dentry = debugfs_create_file("wakeup_sources",
 			S_IRUGO, NULL, NULL, &wakeup_sources_stats_fops);
+#else
+	wakeup_sources_stats_dentry = proc_create("driver/debug/wakeup_sources",
+			0444, NULL, &wakeup_sources_stats_fops);
+#endif
+
 	return 0;
 }
 
