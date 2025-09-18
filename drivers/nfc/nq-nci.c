@@ -1056,11 +1056,12 @@ static int nfcc_hw_check(struct i2c_client *client, struct nqx_dev *nqx_dev)
 	int ret = 0;
 
 	int gpio_retry_count = 0;
-	unsigned char reset_ntf_len = 0;
+	unsigned char init_rsp_len = 0;
 	unsigned int enable_gpio = nqx_dev->en_gpio;
 	char *nci_reset_cmd = NULL;
 	char *nci_reset_rsp = NULL;
-	char *nci_reset_ntf = NULL;
+	char *nci_init_cmd = NULL;
+	char *nci_init_rsp = NULL;
 	char *nci_get_version_cmd = NULL;
 	char *nci_get_version_rsp = NULL;
 
@@ -1076,8 +1077,14 @@ static int nfcc_hw_check(struct i2c_client *client, struct nqx_dev *nqx_dev)
 		goto done;
 	}
 
-	nci_reset_ntf = kzalloc(NCI_RESET_NTF_LEN + 1,  GFP_DMA | GFP_KERNEL);
-	if (!nci_reset_ntf) {
+	nci_init_cmd = kzalloc(NCI_INIT_CMD_LEN + 1,  GFP_DMA | GFP_KERNEL);
+	if (!nci_init_cmd) {
+		ret = -ENOMEM;
+		goto done;
+	}
+
+	nci_init_rsp = kzalloc(NCI_INIT_RSP_LEN + 1,  GFP_DMA | GFP_KERNEL);
+	if (!nci_init_rsp) {
 		ret = -ENOMEM;
 		goto done;
 	}
@@ -1145,7 +1152,7 @@ reset_enable_gpio:
 			goto err_nfcc_hw_check;
 		}
 		/* hardware dependent delay */
-		usleep_range(10000, 10100);
+		usleep_range(30000, 30100);
 
 		ret = i2c_master_recv(client, nci_get_version_rsp,
 						NCI_GET_VERSION_RSP_LEN);
@@ -1160,9 +1167,9 @@ reset_enable_gpio:
 			nqx_dev->nqx_info.info.rom_version =
 				nci_get_version_rsp[4];
 			nqx_dev->nqx_info.info.fw_minor =
-				nci_get_version_rsp[6];
+				nci_get_version_rsp[10];
 			nqx_dev->nqx_info.info.fw_major =
-				nci_get_version_rsp[7];
+				nci_get_version_rsp[11];
 		}
 		goto err_nfcc_reset_failed;
 	}
@@ -1184,30 +1191,42 @@ reset_enable_gpio:
 		goto err_nfcc_hw_check;
 	}
 
+
+	nci_init_cmd[0] = 0x20;
+	nci_init_cmd[1] = 0x01;
+	nci_init_cmd[2] = 0x00;
+	/* send NCI CORE INIT CMD */
+	ret = nqx_standby_write(nqx_dev, nci_init_cmd, NCI_INIT_CMD_LEN);
+	if (ret < 0) {
+		dev_err(&client->dev,
+		"%s: - i2c_master_send failed for Core INIT\n", __func__);
+		goto err_nfcc_hw_check;
+	}
+
 	ret = is_data_available_for_read(nqx_dev);
 	if (ret <= 0) {
 		nqx_disable_irq(nqx_dev);
 		goto err_nfcc_hw_check;
 	}
 
-	/* Read Notification of RESET command */
-	ret = i2c_master_recv(client, nci_reset_ntf, NCI_RESET_NTF_LEN);
+	/* Read Response of INIT command */
+	ret = i2c_master_recv(client, nci_init_rsp, NCI_INIT_RSP_LEN);
 	if (ret < 0) {
 		dev_err(&client->dev,
 		"%s: - i2c_master_recv Error\n", __func__);
 		goto err_nfcc_hw_check;
 	}
 
-	reset_ntf_len = 2 + nci_reset_ntf[2]; /*payload + len*/
-	if (reset_ntf_len > PAYLOAD_HEADER_LENGTH) {
+	init_rsp_len = 2 + nci_init_rsp[2]; /*payload + len*/
+	if (init_rsp_len > PAYLOAD_HEADER_LENGTH) {
 		nqx_dev->nqx_info.info.chip_type =
-				nci_reset_ntf[reset_ntf_len - 3];
+				nci_init_rsp[init_rsp_len - 3];
 		nqx_dev->nqx_info.info.rom_version =
-				nci_reset_ntf[reset_ntf_len - 2];
+				nci_init_rsp[init_rsp_len - 2];
 		nqx_dev->nqx_info.info.fw_major =
-				nci_reset_ntf[reset_ntf_len - 1];
+				nci_init_rsp[init_rsp_len - 1];
 		nqx_dev->nqx_info.info.fw_minor =
-				nci_reset_ntf[reset_ntf_len];
+				nci_init_rsp[init_rsp_len];
 	}
 	dev_dbg(&client->dev,
 		"%s: - nq - reset cmd answer : NfcNciRx %x %x %x\n",
@@ -1215,29 +1234,33 @@ reset_enable_gpio:
 		nci_reset_rsp[1], nci_reset_rsp[2]);
 
 err_nfcc_reset_failed:
-	dev_dbg(&nqx_dev->client->dev, "NQ NFCC chip_type = %x\n",
+	dev_err(&nqx_dev->client->dev, "NQ NFCC chip_type = %x\n",
 		nqx_dev->nqx_info.info.chip_type);
-	dev_dbg(&nqx_dev->client->dev, "NQ fw version = %x.%x.%x\n",
+	dev_err(&nqx_dev->client->dev, "NQ fw version = %x.%x.%x\n",
 		nqx_dev->nqx_info.info.rom_version,
 		nqx_dev->nqx_info.info.fw_major,
 		nqx_dev->nqx_info.info.fw_minor);
 
 	switch (nqx_dev->nqx_info.info.chip_type) {
 	case NFCC_NQ_310:
-		dev_dbg(&client->dev,
+		dev_err(&client->dev,
 		"%s: ## NFCC == NQ310 ##\n", __func__);
 		break;
+	case NFCC_NQ_310A:
+		dev_err(&client->dev,
+		"%s: ## NFCC == NQ310A ##\n", __func__);
+		break;
 	case NFCC_NQ_330:
-		dev_dbg(&client->dev,
+		dev_err(&client->dev,
 		"%s: ## NFCC == NQ330 ##\n", __func__);
 		break;
 	case NFCC_PN66T:
-		dev_dbg(&client->dev,
+		dev_err(&client->dev,
 		"%s: ## NFCC == PN66T ##\n", __func__);
 		break;
 	case NFCC_SN100_A:
 	case NFCC_SN100_B:
-		dev_dbg(&client->dev,
+		dev_err(&client->dev,
 		"%s: ## NFCC == SN100x ##\n", __func__);
 		break;
 	default:
@@ -1257,8 +1280,9 @@ err_nfcc_hw_check:
 
 done:
 	kfree(nci_reset_rsp);
-	kfree(nci_reset_ntf);
 	kfree(nci_reset_cmd);
+	kfree(nci_init_cmd);
+	kfree(nci_init_rsp);
 	kfree(nci_get_version_cmd);
 	kfree(nci_get_version_rsp);
 
@@ -1760,10 +1784,18 @@ static int nqx_suspend(struct device *device)
 {
 	struct i2c_client *client = to_i2c_client(device);
 	struct nqx_dev *nqx_dev = i2c_get_clientdata(client);
+	int r = 0;
 
 	if (device_may_wakeup(&client->dev) && nqx_dev->irq_enabled) {
 		if (!enable_irq_wake(client->irq))
 			nqx_dev->irq_wake_up = true;
+	}
+	if (nqx_dev->pdata->clk_pin_voting && nqx_dev->nfc_ven_enabled) {
+		r = nqx_clock_deselect(nqx_dev);
+		if (r < 0)
+			dev_err(&nqx_dev->client->dev, "%s: unable to disable clock!\n", __func__);
+		else
+			dev_dbg(&nqx_dev->client->dev, "%s: disable clock successfully!\n", __func__);
 	}
 	return 0;
 }
@@ -1772,10 +1804,18 @@ static int nqx_resume(struct device *device)
 {
 	struct i2c_client *client = to_i2c_client(device);
 	struct nqx_dev *nqx_dev = i2c_get_clientdata(client);
+	int r = 0;
 
 	if (device_may_wakeup(&client->dev) && nqx_dev->irq_wake_up) {
 		if (!disable_irq_wake(client->irq))
 			nqx_dev->irq_wake_up = false;
+	}
+	if (nqx_dev->pdata->clk_pin_voting && nqx_dev->nfc_ven_enabled) {
+		r = nqx_clock_select(nqx_dev);
+		if (r < 0)
+			dev_err(&nqx_dev->client->dev, "%s: unable to enable clock!\n", __func__);
+		else
+			dev_dbg(&nqx_dev->client->dev, "%s: enable clock successfully!\n", __func__);
 	}
 	return 0;
 }

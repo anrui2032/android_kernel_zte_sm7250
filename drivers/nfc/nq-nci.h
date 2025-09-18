@@ -17,7 +17,7 @@
 #include <linux/cdev.h>
 #include <linux/nfcinfo.h>
 
-#define NFC_SET_PWR			_IOW(0xE9, 0x01, unsigned int)
+#define NFC_SET_PWR			_IOW(0xE9, 0x01, long)
 #define ESE_SET_PWR			_IOW(0xE9, 0x02, unsigned int)
 #define ESE_GET_PWR			_IOR(0xE9, 0x03, unsigned int)
 #define SET_RX_BLOCK			_IOW(0xE9, 0x04, unsigned int)
@@ -25,7 +25,7 @@
 #define NFCC_INITIAL_CORE_RESET_NTF	_IOW(0xE9, 0x10, unsigned int)
 
 #define DEV_COUNT			1
-#define DEVICE_NAME			"nq-nci"
+#define DEVICE_NAME			"pn553"
 #define CLASS_NAME			"nqx"
 /*
  * From MW 11.04 buffer size increased to support
@@ -38,7 +38,11 @@
 #define NCI_PAYLOAD_IDX			3
 #define MAX_RETRY_COUNT			3
 #define NCI_RESET_CMD_LEN		4
-#define NCI_RESET_RSP_LEN		4
+#define NCI_RESET_RSP_LEN		6
+
+#define NCI_INIT_CMD_LEN		3
+#define NCI_INIT_RSP_LEN		28
+
 #define NCI_RESET_NTF_LEN		13
 #define NCI_GET_VERSION_CMD_LEN		8
 #define NCI_GET_VERSION_RSP_LEN		12
@@ -107,6 +111,7 @@ enum nfcc_chip_variant {
 	NFCC_NQ_210			= 0x48,	/**< NFCC NQ210 */
 	NFCC_NQ_220			= 0x58,	/**< NFCC NQ220 */
 	NFCC_NQ_310			= 0x40,	/**< NFCC NQ310 */
+	NFCC_NQ_310A			= 0x41, /**< NFCC NQ310A */
 	NFCC_NQ_330			= 0x51,	/**< NFCC NQ330 */
 	NFCC_SN100_A			= 0xa3,	/**< NFCC SN100_A */
 	NFCC_SN100_B			= 0xa4,	/**< NFCC SN100_B */
