@@ -31,3 +31,7 @@ obj-$(CONFIG_INPUT_KEYRESET)	+= keyreset.o
 obj-$(CONFIG_INPUT_KEYCOMBO)	+= keycombo.o
 
 obj-$(CONFIG_RMI4_CORE)		+= rmi4/
+
+obj-$(CONFIG_GOODIX_FINGERPRINT) += fingerprint/goodix/
+obj-$(CONFIG_GOODIX_FINGERPRINT_3658) += fingerprint/goodix_3658/
+obj-$(CONFIG_FINGERPRINT_FORTSENSE) += fingerprint/fortsense/
