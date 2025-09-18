@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 #
 # Touchscreen driver configuration
 #
@@ -11,9 +12,51 @@ menuconfig INPUT_TOUCHSCREEN
 
 if INPUT_TOUCHSCREEN
 
+config TS_FIRMWARE
+	string "config board firmware folder"
+
+source "drivers/input/touchscreen/gtx8_zte/Kconfig"
+source "drivers/input/touchscreen/goodix_berlin_driver_zte/Kconfig"
+source "drivers/input/touchscreen/synaptics_tcm_zte/Kconfig"
 config TOUCHSCREEN_PROPERTIES
 	def_tristate INPUT
 	depends on INPUT
+
+config TP_COMMON_INTERFACE
+	bool "tp proc folder"
+	help
+	  Say Y here if you  want to have a common tp proc folder
+	  If unsure, say N.
+
+config TPD_UFP_MAC
+	bool "tp under fingerprint status machine"
+	default n
+	help
+	  Say Y here if you want to have a under fingerprint status machine
+	  If unsure, say N.
+
+config POINT_SIMULAT_UF
+	bool "tp under fingerprint status machine"
+	default n
+	help
+	  Say Y here if you want to simulate finger down
+	  If unsure, say N.
+
+config SCREEN_ON_TEMP_SUPPORT
+	bool "lcd has a temp on when off to aod"
+	depends on TPD_UFP_MAC
+	default n
+	help
+		Say y here if your lcd has a temp on when off to aod
+		if unsure, say n.
+
+config DRM_PANEL_NOTIFIER
+	bool "simulation trigger under fingerprint"
+	default n
+	help
+	  Say Y here to enable debug tools.
+
+	  If unsure, say N.
 
 config TOUCHSCREEN_88PM860X
 	tristate "Marvell 88PM860x touchscreen"
@@ -277,7 +320,6 @@ config TOUCHSCREEN_CYTTSP4_SPI
 config TOUCHSCREEN_DA9034
 	tristate "Touchscreen support for Dialog Semiconductor DA9034"
 	depends on PMIC_DA903X
-	default y
 	help
 	  Say Y here to enable the support for the touchscreen found
 	  on Dialog Semiconductor DA9034 PMIC.
@@ -696,6 +738,19 @@ config TOUCHSCREEN_EDT_FT5X06
 	  To compile this driver as a module, choose M here: the
 	  module will be called edt-ft5x06.
 
+config TOUCHSCREEN_RASPBERRYPI_FW
+	tristate "Raspberry Pi's firmware base touch screen support"
+	depends on RASPBERRYPI_FIRMWARE || (RASPBERRYPI_FIRMWARE=n && COMPILE_TEST)
+	select INPUT_POLLDEV
+	help
+	  Say Y here if you have the official Raspberry Pi 7 inch screen on
+	  your system.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called raspberrypi-ts.
+
 config TOUCHSCREEN_MIGOR
 	tristate "Renesas MIGO-R touchscreen"
 	depends on (SH_MIGOR || COMPILE_TEST) && I2C
@@ -810,7 +865,6 @@ config TOUCHSCREEN_WM97XX
 config TOUCHSCREEN_WM9705
 	bool "WM9705 Touchscreen interface support"
 	depends on TOUCHSCREEN_WM97XX
-	default y
 	help
 	  Say Y here to enable support for the Wolfson Microelectronics
 	  WM9705 touchscreen controller.
@@ -818,7 +872,6 @@ config TOUCHSCREEN_WM9705
 config TOUCHSCREEN_WM9712
 	bool "WM9712 Touchscreen interface support"
 	depends on TOUCHSCREEN_WM97XX
-	default y
 	help
 	  Say Y here to enable support for the Wolfson Microelectronics
 	  WM9712 touchscreen controller.
@@ -826,7 +879,6 @@ config TOUCHSCREEN_WM9712
 config TOUCHSCREEN_WM9713
 	bool "WM9713 Touchscreen interface support"
 	depends on TOUCHSCREEN_WM97XX
-	default y
 	help
 	  Say Y here to enable support for the Wolfson Microelectronics
 	  WM9713 touchscreen controller.
@@ -856,16 +908,16 @@ config TOUCHSCREEN_WM97XX_ZYLONITE
 	  To compile this driver as a module, choose M here: the
 	  module will be called zylonite-wm97xx.
 
-config SECURE_TOUCH_SYNAPTICS_DSX
-	bool "Secure Touch"
-	depends on TOUCHSCREEN_SYNAPTICS_DSX_I2C
-	help
-	  Say Y here to enable Secure Touch in supported driver.
-
-	  If unsure, say N.
-
-	  To compile the supported driver with Secure Touch enabled,
-	  choose M here.
+# config SECURE_TOUCH_SYNAPTICS_DSX
+# 	bool "Secure Touch"
+# 	depends on TOUCHSCREEN_SYNAPTICS_DSX_I2C
+# 	help
+# 	  Say Y here to enable Secure Touch in supported driver.
+#
+# 	  If unsure, say N.
+#
+# 	  To compile the supported driver with Secure Touch enabled,
+# 	  choose M here.
 
 config TOUCHSCREEN_USB_COMPOSITE
 	tristate "USB Touchscreen Driver"
@@ -1109,14 +1161,14 @@ config TOUCHSCREEN_TSC2007_IIO
 	  or ambient light monitoring), temperature and raw input
 	  values.
 
-config TOUCHSCREEN_W90X900
-	tristate "W90P910 touchscreen driver"
-	depends on ARCH_W90X900
-	help
-	  Say Y here if you have a W90P910 based touchscreen.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called w90p910_ts.
+# config TOUCHSCREEN_W90X900
+# 	tristate "W90P910 touchscreen driver"
+# 	depends on ARCH_W90X900
+# 	help
+# 	  Say Y here if you have a W90P910 based touchscreen.
+#
+# 	  To compile this driver as a module, choose M here: the
+# 	  module will be called w90p910_ts.
 
 config TOUCHSCREEN_PCAP
 	tristate "Motorola PCAP touchscreen"
@@ -1167,11 +1219,11 @@ config TOUCHSCREEN_SIS_I2C
 	  module will be called sis_i2c.
 
 config TOUCHSCREEN_ST1232
-	tristate "Sitronix ST1232 touchscreen controllers"
+	tristate "Sitronix ST1232 or ST1633 touchscreen controllers"
 	depends on I2C
 	help
-	  Say Y here if you want to support Sitronix ST1232
-	  touchscreen controller.
+	  Say Y here if you want to support the Sitronix ST1232
+	  or ST1633 touchscreen controller.
 
 	  If unsure, say N.
 
@@ -1310,18 +1362,56 @@ config TOUCHSCREEN_ROHM_BU21023
 	  To compile this driver as a module, choose M here: the
 	  module will be called bu21023_ts.
 
-config TOUCHSCREEN_ST
-	tristate "STMicroelectronics Touchscreen Driver"
-	depends on I2C
-	default y
-	help
-	  Say Y here if you have a STMicroelectronics Touchscreen.
+# config TOUCHSCREEN_ST
+# 	tristate "STMicroelectronics Touchscreen Driver"
+# 	depends on I2C
+# 	default y
+# 	help
+# 	  Say Y here if you have a STMicroelectronics Touchscreen.
+#
+# 	  If unsure, say N.
+# 	  To compile this driver as a module, choose M here: the
+# 	  module will be called st.
 
-	  If unsure, say N.
+config TOUCHSCREEN_IQS5XX
+	tristate "Azoteq IQS550/572/525 trackpad/touchscreen controller"
+	depends on I2C
+	help
+	  Say Y to enable support for the Azoteq IQS550/572/525
+	  family of trackpad/touchscreen controllers.
+
 	  To compile this driver as a module, choose M here: the
-	  module will be called st.
+	  module will be called iqs5xx.
 
 source "drivers/input/touchscreen/st/Kconfig"
+
+# config TOUCHSCREEN_SYNAPTICS_DSX
+# 	bool "Synaptics DSX Touchscreen Driver"
+# 	depends on I2C
+# 	default y
+# 	help
+# 	  Say Y here if you have a Synaptics Touchscreen.
+#
+# 	  If unsure, say N.
+#
+# 	  To compile this driver as a module, choose M here: the
+# 	  module will be called synaptics_dsx.
+
+source "drivers/input/touchscreen/focaltech_touch/Kconfig"
+
+config TOUCHSCREEN_SYNAPTICS_TCM
+	bool "Synaptics TCM Touchscreen Driver"
+	depends on I2C
+	default n
+	help
+	  Say Y here if you have a Synaptics Touchscreen.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called synaptics_tcm.
+
+source "drivers/input/touchscreen/synaptics_tcm/Kconfig"
 
 config TOUCHSCREEN_SYNAPTICS_DSX
 	bool "Synaptics DSX Touchscreen Driver"
@@ -1333,25 +1423,11 @@ config TOUCHSCREEN_SYNAPTICS_DSX
 	  If unsure, say N.
 
 	  To compile this driver as a module, choose M here: the
-	  module will be called synaptics_dsx.
-
-source "drivers/input/touchscreen/synaptics_dsx/Kconfig"
-
-config TOUCHSCREEN_SYNAPTICS_TCM
-	bool "Synaptics TCM Touchscreen Driver"
-	depends on I2C
-	default y
-	help
-	  Say Y here if you have a Synaptics Touchscreen.
-
-	  If unsure, say N.
-
-	  To compile this driver as a module, choose M here: the
 	  module will be called synaptics_tcm.
 
-source "drivers/input/touchscreen/synaptics_tcm/Kconfig"
+# source "drivers/input/touchscreen/synaptics_tcm/Kconfig"
 
-source "drivers/input/touchscreen/focaltech_touch/Kconfig"
+# source "drivers/input/touchscreen/focaltech_touch/Kconfig"
 
 source "drivers/input/touchscreen/nt36xxx/Kconfig"
 
