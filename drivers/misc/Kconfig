@@ -622,6 +622,13 @@ config QTI_MAXIM_FAN_CONTROLLER
 	  Also, this driver initializes the power for the fan controller
 	  and exposes sysfs node to control different speeds of fan.
 
+config SAFECHIP_VEB_A5
+	tristate "safechip zyitong veb A5"
+	depends on SPI
+	default n
+	help
+	  This driver provides support for safechip zyitong veb A5 devices.
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
