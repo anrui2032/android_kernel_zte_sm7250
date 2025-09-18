@@ -12,6 +12,8 @@
 #include "cam_common_util.h"
 #include "cam_packet_util.h"
 
+#include "zte_cam_eeprom_dev.h"
+#include "zte_camera_sensor_util.h"
 
 static void cam_sensor_update_req_mgr(
 	struct cam_sensor_ctrl_t *s_ctrl,
@@ -451,6 +453,7 @@ int32_t cam_sensor_update_slave_info(struct cam_cmd_probe *probe_info,
 
 	s_ctrl->sensor_probe_addr_type =  probe_info->addr_type;
 	s_ctrl->sensor_probe_data_type =  probe_info->data_type;
+	s_ctrl->module_id = probe_info->Lens_reserved;
 	CAM_DBG(CAM_SENSOR,
 		"Sensor Addr: 0x%x sensor_id: 0x%x sensor_mask: 0x%x sensor_pipeline_delay:0x%x",
 		s_ctrl->sensordata->slave_info.sensor_id_reg_addr,
@@ -620,6 +623,7 @@ void cam_sensor_query_cap(struct cam_sensor_ctrl_t *s_ctrl,
 		s_ctrl->soc_info.index;
 }
 
+#if 0
 static uint16_t cam_sensor_id_by_mask(struct cam_sensor_ctrl_t *s_ctrl,
 	uint32_t chipid)
 {
@@ -638,6 +642,27 @@ static uint16_t cam_sensor_id_by_mask(struct cam_sensor_ctrl_t *s_ctrl,
 	}
 	return sensor_id;
 }
+#else
+static int cam_sensor_id_match_by_mask(struct cam_sensor_ctrl_t *s_ctrl,
+	uint32_t chipid, uint16_t slave_id)
+{
+	uint16_t sensor_id = (uint16_t)(chipid & 0xFFFF);
+	uint16_t sensor_match_id = slave_id;
+	int16_t sensor_id_mask = s_ctrl->sensordata->slave_info.sensor_id_mask;
+	int rc = 0;
+
+	if (!sensor_id_mask)
+		sensor_id_mask = ~sensor_id_mask;
+
+	sensor_id &= sensor_id_mask;
+	sensor_match_id &= sensor_id_mask;
+
+	if (sensor_id != sensor_match_id)
+		rc = -ENODEV;
+
+	return rc;
+}
+#endif
 
 void cam_sensor_shutdown(struct cam_sensor_ctrl_t *s_ctrl)
 {
@@ -682,6 +707,7 @@ int cam_sensor_match_id(struct cam_sensor_ctrl_t *s_ctrl)
 {
 	int rc = 0;
 	uint32_t chipid = 0;
+	uint32_t module_id = 0;
 	struct cam_camera_slave_info *slave_info;
 
 	slave_info = &(s_ctrl->sensordata->slave_info);
@@ -692,21 +718,61 @@ int cam_sensor_match_id(struct cam_sensor_ctrl_t *s_ctrl)
 		return -EINVAL;
 	}
 
-	rc = camera_io_dev_read(
-		&(s_ctrl->io_master_info),
-		slave_info->sensor_id_reg_addr,
-		&chipid,
-		s_ctrl->sensor_probe_addr_type,
-		s_ctrl->sensor_probe_data_type);
+	if(s_ctrl->sensor_probe_addr_type == CAMERA_SENSOR_I2C_TYPE_BYTE){
+		rc = camera_io_dev_read(
+			&(s_ctrl->io_master_info),
+			slave_info->sensor_id_reg_addr,
+			&chipid, CAMERA_SENSOR_I2C_TYPE_BYTE,
+			CAMERA_SENSOR_I2C_TYPE_WORD);
 
-	CAM_DBG(CAM_SENSOR, "read id: 0x%x expected id 0x%x:",
-		chipid, slave_info->sensor_id);
+		CAM_DBG(CAM_SENSOR, "read id: 0x%x expected id 0x%x:",
+			chipid, slave_info->sensor_id);
+	}else {
+		rc = camera_io_dev_read(
+			&(s_ctrl->io_master_info),
+			slave_info->sensor_id_reg_addr,
+			&chipid, CAMERA_SENSOR_I2C_TYPE_WORD,
+			CAMERA_SENSOR_I2C_TYPE_WORD);
 
+		CAM_DBG(CAM_SENSOR, "read id: 0x%x expected id 0x%x:",
+			chipid, slave_info->sensor_id);
+	}
+
+#if 0
 	if (cam_sensor_id_by_mask(s_ctrl, chipid) != slave_info->sensor_id) {
 		CAM_WARN(CAM_SENSOR, "read id: 0x%x expected id 0x%x:",
 				chipid, slave_info->sensor_id);
 		return -ENODEV;
 	}
+#else
+	if (cam_sensor_id_match_by_mask(s_ctrl, chipid, slave_info->sensor_id) != 0) {
+		CAM_ERR(CAM_SENSOR, "chip id %x does not match %x",
+				chipid, slave_info->sensor_id);
+		return -ENODEV;
+	}
+#endif
+
+	if (s_ctrl->module_id >= 0 && s_ctrl->eeprom_pdev) {
+		struct cam_eeprom_ctrl_t *e_ctrl = NULL;
+
+		e_ctrl = platform_get_drvdata(s_ctrl->eeprom_pdev);
+
+		if (!e_ctrl) {
+			CAM_ERR(CAM_SENSOR, ": can't find the eeprom device");
+			return -EINVAL;
+		}
+		if (e_ctrl && e_ctrl->eeprom_fun_p && e_ctrl->eeprom_fun_p->read_id) {
+			module_id = e_ctrl->eeprom_fun_p->read_id(s_ctrl->io_master_info.cci_client);
+			if (module_id != s_ctrl->module_id) {
+				CAM_ERR(CAM_SENSOR, ": can't find the lens id %x,reserved id %x"
+					, module_id, s_ctrl->module_id);
+				return -ENODEV;
+			}
+
+		}
+
+	}
+
 	return rc;
 }
 
@@ -809,6 +875,9 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 		 */
 		s_ctrl->is_probe_succeed = 1;
 		s_ctrl->sensor_state = CAM_SENSOR_INIT;
+
+		if (!msm_sensor_enable_debugfs(s_ctrl))
+			msm_sensor_register_sysdev(s_ctrl);
 	}
 		break;
 	case CAM_ACQUIRE_DEV: {
@@ -818,7 +887,7 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 		if ((s_ctrl->is_probe_succeed == 0) ||
 			(s_ctrl->sensor_state != CAM_SENSOR_INIT)) {
 			CAM_WARN(CAM_SENSOR,
-				"Not in right state to aquire %d， probe %d",
+				"Not in right state to aquire %d,probe %d",
 				s_ctrl->sensor_state, s_ctrl->is_probe_succeed);
 			rc = -EINVAL;
 			goto release_mutex;

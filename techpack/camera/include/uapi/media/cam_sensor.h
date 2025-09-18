@@ -165,6 +165,7 @@ struct cam_cmd_probe {
 	uint32_t    data_mask;
 	uint16_t    camera_id;
 	uint16_t    reserved;
+	uint16_t    Lens_reserved;
 } __attribute__((packed));
 
 /**
