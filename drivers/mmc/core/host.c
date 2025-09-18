@@ -220,6 +220,7 @@ bool mmc_host_may_gate_card(struct mmc_card *card)
 	 */
 	return !(card->quirks & MMC_QUIRK_BROKEN_CLK_GATING);
 }
+EXPORT_SYMBOL(mmc_host_may_gate_card);
 
 static void mmc_retune_timer(struct timer_list *t)
 {

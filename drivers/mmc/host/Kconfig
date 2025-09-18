@@ -90,6 +90,11 @@ config MMC_SDHCI_PCI
 
 	  If unsure, say N.
 
+config MMC_ZTE_NM
+	tristate "ZTE NM support"
+	help
+	  add support for zte NM
+
 config MMC_RICOH_MMC
 	bool "Ricoh MMC Controller Disabler"
 	depends on MMC_SDHCI_PCI

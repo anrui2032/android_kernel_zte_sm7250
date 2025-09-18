@@ -329,12 +329,16 @@ struct sdhci_msm_host {
 
 extern char *saved_command_line;
 
+#ifndef CONFIG_MMC_ZTE_NM
 void sdhci_msm_pm_qos_irq_init(struct sdhci_host *host);
+#endif
 void sdhci_msm_pm_qos_irq_vote(struct sdhci_host *host);
 void sdhci_msm_pm_qos_irq_unvote(struct sdhci_host *host, bool async);
 
+#ifndef CONFIG_MMC_ZTE_NM
 void sdhci_msm_pm_qos_cpu_init(struct sdhci_host *host,
 		struct sdhci_msm_pm_qos_latency *latency);
+#endif
 void sdhci_msm_pm_qos_cpu_vote(struct sdhci_host *host,
 		struct sdhci_msm_pm_qos_latency *latency, int cpu);
 bool sdhci_msm_pm_qos_cpu_unvote(struct sdhci_host *host, int cpu, bool async);

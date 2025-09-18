@@ -402,6 +402,7 @@ void cqhci_crypto_qti_set_vops(struct cqhci_host *host)
 {
 	return cqhci_crypto_set_vops(host, &cqhci_crypto_qti_variant_ops);
 }
+EXPORT_SYMBOL(cqhci_crypto_qti_set_vops);
 
 int cqhci_crypto_qti_resume(struct cqhci_host *host)
 {
