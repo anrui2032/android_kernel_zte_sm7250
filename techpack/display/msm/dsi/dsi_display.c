@@ -20,6 +20,11 @@
 #include "dsi_pwr.h"
 #include "sde_dbg.h"
 #include "dsi_parser.h"
+/* zte add common function for lcd module begin */
+#ifdef CONFIG_ZTE_LCD_COMMON_FUNCTION
+#include "zte_lcd_common.h"
+#endif
+/* zte add common function for lcd module end */
 
 #define to_dsi_display(x) container_of(x, struct dsi_display, host)
 #define INT_BASE_10 10
@@ -32,6 +37,14 @@
 
 #define DSI_CLOCK_BITRATE_RADIX 10
 #define MAX_TE_SOURCE_ID  2
+#ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_TCM_ZTE
+extern int syna_tcm_notifier_cb(bool enable);
+extern void syna_tcm_report_lcd_state(void);
+#endif
+#ifdef CONFIG_TPD_UFP_MAC
+extern void ufp_report_lcd_state(void);
+extern int ufp_notifier_cb(int in_lp);
+#endif
 
 static char dsi_display_primary[MAX_CMDLINE_PARAM_LEN];
 static char dsi_display_secondary[MAX_CMDLINE_PARAM_LEN];
@@ -1045,6 +1058,12 @@ int dsi_display_set_power(struct drm_connector *connector,
 		int power_mode, void *disp)
 {
 	struct dsi_display *display = disp;
+#ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_TCM_ZTE
+	static bool panel_in_low_power = false;
+#endif
+#ifdef CONFIG_TPD_UFP_MAC
+	static bool panel_enter_low_power = false;
+#endif
 	int rc = 0;
 
 	if (!display || !display->panel) {
@@ -1054,18 +1073,77 @@ int dsi_display_set_power(struct drm_connector *connector,
 
 	switch (power_mode) {
 	case SDE_MODE_DPMS_LP1:
+#ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_TCM_ZTE
+		panel_in_low_power = true;
+		syna_tcm_notifier_cb(true);
+		syna_tcm_report_lcd_state();
+#endif
+#ifdef CONFIG_TPD_UFP_MAC
+		panel_enter_low_power = true;
+		ufp_notifier_cb(true);
+		ufp_report_lcd_state();
+#endif
 		rc = dsi_panel_set_lp1(display->panel);
+#ifdef CONFIG_ZTE_LCD_AOD_BRIGHTNESS_CTRL
+		panel_set_aod_brightness(display->panel,
+				display->panel->zte_lcd_aod_brightness);
+
+		display->panel->zte_panel_state = 1;
+#endif
+		pr_info("MSM_LCD Enter LP1\n");
 		break;
 	case SDE_MODE_DPMS_LP2:
 		rc = dsi_panel_set_lp2(display->panel);
+		pr_info("MSM_LCD Enter LP2\n");
 		break;
 	case SDE_MODE_DPMS_ON:
 		if ((display->panel->power_mode == SDE_MODE_DPMS_LP1) ||
-			(display->panel->power_mode == SDE_MODE_DPMS_LP2))
+			(display->panel->power_mode == SDE_MODE_DPMS_LP2)) {
+#ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_TCM_ZTE
+			if (panel_in_low_power) {
+				panel_in_low_power = false;
+				syna_tcm_notifier_cb(false);
+			}
+#endif
+#ifdef CONFIG_TPD_UFP_MAC
+			if (panel_enter_low_power) {
+				panel_enter_low_power = false;
+				ufp_notifier_cb(false);
+			}
+#endif
 			rc = dsi_panel_set_nolp(display->panel);
+#ifdef CONFIG_ZTE_LCD_AOD_BRIGHTNESS_CTRL
+			display->panel->zte_panel_state = 0;
+#endif
+	    }
+		pr_info("MSM_LCD Exit LP powermode=%d\n", display->panel->power_mode);
 		break;
 	case SDE_MODE_DPMS_OFF:
 	default:
+#ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_TCM_ZTE
+		if (panel_in_low_power) {
+			panel_in_low_power = false;
+			syna_tcm_notifier_cb(false);
+			pr_info("syna exit lp1\n");
+		}
+#endif
+#ifdef CONFIG_TPD_UFP_MAC
+			if (panel_enter_low_power) {
+				panel_enter_low_power = false;
+				ufp_notifier_cb(false);
+				pr_info("ufp exit lp1\n");
+			}
+#endif
+#ifdef  CONFIG_ZTE_LCD_AOD_BACKLIGHT_FLASH
+		if ((display->panel->power_mode == SDE_MODE_DPMS_LP1) ||
+			(display->panel->power_mode == SDE_MODE_DPMS_LP2)) {
+			rc = dsi_panel_set_nolp(display->panel); /* add by zte for lcd aod backlight flash */
+		}
+#endif
+#ifdef CONFIG_ZTE_LCD_AOD_BRIGHTNESS_CTRL
+			display->panel->zte_panel_state = 0;
+			pr_info("MSM_LCD OFF Exit LP\n");
+#endif
 		return rc;
 	}
 
@@ -2940,8 +3018,23 @@ static ssize_t dsi_host_transfer(struct mipi_dsi_host *host,
 				msg->flags & MIPI_DSI_MSG_ASYNC_OVERRIDE)
 			cmd_flags |= DSI_CTRL_CMD_ASYNC_WAIT;
 
+/* modify by zte for lcd mipi read register start */
+#ifdef CONFIG_ZTE_LCD_REG_DEBUG
+		pr_debug("MSM_LCD dsi_ctrl_cmd_transfer type=%x\n", msg->type);
+		if (msg->type == 0x06) {/* DTYPE_DCS_READ */
+		   cmd_flags |= DSI_CTRL_CMD_READ;
+		   cmd_flags |= DSI_CTRL_CMD_CUSTOM_DMA_SCHED;
+			rc = dsi_ctrl_cmd_transfer(display->ctrl[ctrl_idx].ctrl, msg,
+					&cmd_flags);
+		} else {
+			rc = dsi_ctrl_cmd_transfer(display->ctrl[ctrl_idx].ctrl, msg,
+					&cmd_flags);
+		}
+#else
 		rc = dsi_ctrl_cmd_transfer(display->ctrl[ctrl_idx].ctrl, msg,
 				&cmd_flags);
+#endif
+/* modify by zte for lcd mipi read register end */
 		if (rc) {
 			DSI_ERR("[%s] cmd transfer failed, rc=%d\n",
 			       display->name, rc);
@@ -7597,6 +7690,14 @@ int dsi_display_enable(struct dsi_display *display)
 		}
 
 		display->panel->panel_initialized = true;
+
+		mode = display->panel->cur_mode; /* zte add for dfps issue of 90hz panel */
+		if (!strcmp(display->panel->name, "Visionox-RM692C9-1080-2460-6P9Inch-10bit-90hz")) {
+			rc = dsi_panel_switch(display->panel);
+			if (rc)
+				DSI_ERR("[%s] failed to switch DSI panel mode, rc=%d\n",
+					display->name, rc);
+		}
 		DSI_DEBUG("cont splash enabled, display enable not required\n");
 		return 0;
 	}
