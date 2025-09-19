@@ -876,6 +876,18 @@ config PROCESS_RECLAIM
 
 	 Any other value is ignored.
 
+config UID_PAGELIST
+	bool "putting a process`s page in a list "
+	default n
+	help
+	  this feature allow some application`s file pages putting in a page list labeled by this
+	  application`s uid, thus this pages can be stayed in ram more longer time then those
+	  in file LRU list..
+
+config BIGGER_ORDER_UNMOV
+	default n
+	bool "a new migrate type used for bigger order unmove"
+
 config FORCE_ALLOC_FROM_DMA_ZONE
 	bool "Force certain memory allocators to always return ZONE_DMA32 memory"
 	depends on ZONE_DMA32
