@@ -60,6 +60,8 @@ struct syna_tcm_board_data {
 	const char *bus_reg_name;
 	const char *fw_name;
 	bool extend_report;
+	unsigned int lcd_width;
+	unsigned int lcd_height;
 };
 
 #endif

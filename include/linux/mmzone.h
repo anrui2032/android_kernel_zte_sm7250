@@ -61,6 +61,9 @@ enum migratetype {
 #endif
 	MIGRATE_PCPTYPES, /* the number of types on the pcp lists */
 	MIGRATE_HIGHATOMIC = MIGRATE_PCPTYPES,
+#ifdef CONFIG_BIGGER_ORDER_UNMOV
+	MIGRATE_UNMOVABLE_SEC,
+#endif
 #ifdef CONFIG_MEMORY_ISOLATION
 	MIGRATE_ISOLATE,	/* can't allocate from here */
 #endif
@@ -85,6 +88,12 @@ static inline bool is_migrate_movable(int mt)
 	return is_migrate_cma(mt) || mt == MIGRATE_MOVABLE;
 }
 
+#ifdef CONFIG_BIGGER_ORDER_UNMOV
+static inline int is_migrate_unmov_sec(int migratetype)
+{
+	return migratetype == MIGRATE_UNMOVABLE_SEC;
+}
+#endif
 #define for_each_migratetype_order(order, type) \
 	for (order = 0; order < MAX_ORDER; order++) \
 		for (type = 0; type < MIGRATE_TYPES; type++)
@@ -101,6 +110,9 @@ extern int page_group_by_mobility_disabled;
 struct free_area {
 	struct list_head	free_list[MIGRATE_TYPES];
 	unsigned long		nr_free;
+#ifdef CONFIG_BIGGER_ORDER_UNMOV
+	unsigned long		nr_free_unmov_sec;
+#endif
 };
 
 struct pglist_data;
@@ -155,7 +167,13 @@ enum zone_stat_item {
 #if IS_ENABLED(CONFIG_ZSMALLOC)
 	NR_ZSPAGES,		/* allocated in zsmalloc */
 #endif
+#ifdef CONFIG_UID_PAGELIST
+	NR_ZONE_UID_PAGES,
+#endif
 	NR_FREE_CMA_PAGES,
+#ifdef CONFIG_BIGGER_ORDER_UNMOV
+	NR_FREE_UNMOV_SEC_POOL,
+#endif
 	NR_VM_ZONE_STAT_ITEMS };
 
 enum node_stat_item {
@@ -246,8 +264,19 @@ struct zone_reclaim_stat {
 	unsigned long		recent_scanned[2];
 };
 
+#ifdef CONFIG_UID_PAGELIST
+struct uid_node {
+	struct uid_node __rcu *next;
+	uid_t uid;
+	struct list_head  page_cache_list;
+	struct rcu_head rcu;
+};
+#endif
 struct lruvec {
 	struct list_head		lists[NR_LRU_LISTS];
+#ifdef CONFIG_UID_PAGELIST
+	struct uid_node **uid_hash;
+#endif
 	struct zone_reclaim_stat	reclaim_stat;
 	/* Evictions & activations on the inactive file list */
 	atomic_long_t			inactive_age;

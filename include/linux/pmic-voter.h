@@ -44,5 +44,6 @@ struct votable *create_votable(const char *name,
 void destroy_votable(struct votable *votable);
 void lock_votable(struct votable *votable);
 void unlock_votable(struct votable *votable);
+int vote_force_active(struct votable *votable, bool enabled, int val);
 
 #endif /* __PMIC_VOTER_H */

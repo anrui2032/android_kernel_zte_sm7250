@@ -26,6 +26,15 @@ int psi_show(struct seq_file *s, struct psi_group *group, enum psi_res res);
 void psi_emergency_trigger(void);
 bool psi_is_trigger_active(void);
 
+#ifdef CONFIG_PSI_ZTE_PATCH
+extern int zte_psi_task_retag_debug_cnt;
+extern long zte_psi_task_retag_last_pid;
+extern struct percpu_counter zte_psi_task_enter_percpu_cnt;
+extern struct percpu_counter zte_psi_task_exit_percpu_cnt;
+extern struct percpu_counter zte_psi_task_set_percpu_cnt;
+extern struct percpu_counter zte_psi_task_clear_percpu_cnt;
+#endif
+
 #ifdef CONFIG_CGROUPS
 int psi_cgroup_alloc(struct cgroup *cgrp);
 void psi_cgroup_free(struct cgroup *cgrp);
