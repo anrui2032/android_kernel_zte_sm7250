@@ -100,6 +100,14 @@ config SECURITY_SELINUX_CHECKREQPROT_VALUE
 
 	  If you are unsure how to answer this question, answer 0.
 
+# Preproc/postproc policy as binary image
+config SECURITY_SELINUX_POLICYPROC
+	bool "NSA SELinux policy preprocess/postprocess"
+	depends on SECURITY_SELINUX
+	default y
+	help
+	  This option preprocesses/postprocesses policy as binary image.
+
 config SECURITY_SELINUX_SIDTAB_HASH_BITS
 	int "NSA SELinux sidtab hashtable size"
 	depends on SECURITY_SELINUX

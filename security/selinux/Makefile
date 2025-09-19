@@ -16,6 +16,9 @@ selinux-$(CONFIG_NETLABEL) += netlabel.o
 
 selinux-$(CONFIG_SECURITY_INFINIBAND) += ibpkey.o
 
+# Preproc/postproc policy as binary image
+selinux-$(CONFIG_SECURITY_SELINUX_POLICYPROC) += ss/policyproc.o
+
 ccflags-y := -I$(srctree)/security/selinux -I$(srctree)/security/selinux/include
 
 $(addprefix $(obj)/,$(selinux-y)): $(obj)/flask.h

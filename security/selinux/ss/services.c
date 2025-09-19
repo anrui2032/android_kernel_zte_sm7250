@@ -70,6 +70,18 @@
 #include "ebitmap.h"
 #include "audit.h"
 
+/*
+ * Postproc av permissions
+ *
+ * Postprocess av permissions for /sys/fs/selinux/access, i.e.
+ * remove 'allow adbd kernel:security setenforce',
+ * to fix cts issue of android.security.cts.SELinuxTest#testSELinuxPolicyFile
+ */
+#if defined(CONFIG_SECURITY_SELINUX_POLICYPROC)
+#include "policyproc.h"
+#include <vendor/soc/qcom/vendor_cfg_helper.h>
+#endif /* CONFIG_SECURITY_SELINUX_POLICYPROC */
+
 /* Policy capability names */
 const char *selinux_policycap_names[__POLICYDB_CAPABILITY_MAX] = {
 	"network_peer_controls",
@@ -1205,6 +1217,20 @@ void security_compute_av_user(struct selinux_state *state,
 
 	context_struct_compute_av(policydb, scontext, tcontext, tclass, avd,
 				  NULL);
+
+/*
+ * Postproc av permissions
+ *
+ * Postprocess av permissions for /sys/fs/selinux/access, i.e.
+ * remove 'allow adbd kernel:security setenforce',
+ * to fix cts issue of android.security.cts.SELinuxTest#testSELinuxPolicyFile
+ */
+#if defined(CONFIG_SECURITY_SELINUX_POLICYPROC)
+	if (request_privilege_state()) {
+		(void)pp_postproc_av_perms(state, policydb, ssid, tsid, tclass, &avd->allowed);
+	}
+#endif /* CONFIG_SECURITY_SELINUX_POLICYPROC */
+
  out:
 	read_unlock(&state->ss->policy_rwlock);
 	return;
