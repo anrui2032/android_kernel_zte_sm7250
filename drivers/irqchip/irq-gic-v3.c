@@ -344,6 +344,8 @@ static int gic_suspend(void)
 	return 0;
 }
 
+extern void print_irq_info(int i);
+extern void pm_show_rpm_stats(void);
 /*
  * gic_show_pending_irq - Shows the pending interrupts
  * Note: Interrupts should be disabled on the cpu from which
@@ -373,12 +375,16 @@ static void gic_show_resume_irq(struct gic_chip_data *gic)
 	u32 enabled;
 	u32 pending[32];
 	void __iomem *base = gic_data.dist_base;
+	u32 irqenabled[32] = {0};
 
-	if (!msm_show_resume_irq_mask)
+	if (!msm_show_resume_irq_mask) {
+		pr_warn("%s: msm_show_resume_irq_mask=%d\n", __func__, msm_show_resume_irq_mask);
 		return;
+	}
 
 	for (i = 0; i * 32 < gic->irq_nr; i++) {
 		enabled = readl_relaxed(base + GICD_ICENABLER + i * 4);
+		irqenabled[i] = enabled;
 		pending[i] = readl_relaxed(base + GICD_ISPENDR + i * 4);
 		pending[i] &= enabled;
 	}
@@ -395,8 +401,30 @@ static void gic_show_resume_irq(struct gic_chip_data *gic)
 		else if (desc->action && desc->action->name)
 			name = desc->action->name;
 
-		pr_warn("%s: %d triggered %s\n", __func__, irq, name);
+		pr_warn("%s: %d triggered name=%s\n", __func__, irq, name);
+		/* zte_pm --- begin */
+		print_irq_info(irq);
 	}
+	pm_show_rpm_stats();
+
+	if (false) {
+		pr_warn("%s: show all enable-wakeup irq:\n", __func__);
+		for (i = find_first_bit((unsigned long *)irqenabled, gic->irq_nr);
+			i < gic->irq_nr;
+			i = find_next_bit((unsigned long *)irqenabled, gic->irq_nr, i+1)) {
+			unsigned int irq = irq_find_mapping(gic->domain, i);
+			struct irq_desc *desc = irq_to_desc(irq);
+			const char *name = "null";
+
+			if (desc == NULL)
+				name = "stray irq";
+			else if (desc->action && desc->action->name)
+				name = desc->action->name;
+			if ((desc != NULL) && (desc->wake_depth > 0))
+				pr_info("zte_pm:enable irq=%d, wake_depth=%d, name=%s\n", irq, desc->wake_depth, name);
+			}
+	}
+	/* zte_pm --- end */
 }
 
 static void gic_resume_one(struct gic_chip_data *gic)
