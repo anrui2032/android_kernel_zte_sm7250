@@ -348,6 +348,9 @@ struct dwc3_msm {
 	int			gsi_reg_offset_cnt;
 	bool			gsi_io_coherency_disabled;
 
+	/* Usb online lpm test requirement, 1/5 */
+	struct class *lpm_test_class;
+	struct device *lpm_test_dev;
 	struct notifier_block	dpdm_nb;
 	struct regulator	*dpdm_reg;
 
@@ -367,6 +370,12 @@ struct dwc3_msm {
 #define USB_SSPHY_1P8_VOL_MIN		1800000 /* uV */
 #define USB_SSPHY_1P8_VOL_MAX		1800000 /* uV */
 #define USB_SSPHY_1P8_HPM_LOAD		23000	/* uA */
+
+#ifdef ZTE_DISABLE_HOST_MODE
+static bool disable_host_mode = 1;
+module_param(disable_host_mode, bool, 0644);
+MODULE_PARM_DESC(disable_host_mode, "To stop HOST mode detection");
+#endif
 
 static void dwc3_pwr_event_handler(struct dwc3_msm *mdwc);
 static int dwc3_msm_gadget_vbus_draw(struct dwc3_msm *mdwc, unsigned int mA);
@@ -447,6 +456,20 @@ static inline void dwc3_msm_write_reg_field(void __iomem *base, u32 offset,
 	/* Read back to make sure that previous write goes through */
 	ioread32(base + offset);
 }
+
+static void __iomem *the_mdwc_base;
+
+void dwc3_tune_de_emphasis_set(u32 val, u32 offset)
+{
+	dwc3_msm_write_reg(the_mdwc_base, offset, val);
+}
+EXPORT_SYMBOL(dwc3_tune_de_emphasis_set);
+
+u32 dwc3_tune_de_emphasis_get(u32 offset)
+{
+	return dwc3_msm_read_reg(the_mdwc_base, offset);
+}
+EXPORT_SYMBOL(dwc3_tune_de_emphasis_get);
 
 static bool dwc3_msm_is_ss_rhport_connected(struct dwc3_msm *mdwc)
 {
@@ -3297,6 +3320,68 @@ static void check_for_sdp_connection(struct work_struct *w)
 	}
 }
 
+/* Usb online lpm test requirement, 2/5 */
+static bool forge_usb_offline = 0;
+
+static ssize_t set_usb_online_fn(struct device *dev,
+						struct device_attribute *attr,
+						const char *buf, size_t count)
+{
+	int online;
+	struct dwc3_msm *mdwc = dev_get_drvdata(dev);
+
+	if (kstrtoint(buf, 10, &online) < 0)
+		return -EINVAL;
+
+	online = !!online;
+	pr_info("%s, online : %d\n", __func__, online);
+
+	mdwc->vbus_active = online;
+	dwc3_ext_event_notify(mdwc);
+
+	forge_usb_offline = !online;
+
+	return count;
+}
+
+static DEVICE_ATTR(set_usb_online, S_IWUSR, NULL, set_usb_online_fn);
+
+static struct device_attribute *lpm_test_attributes[] = {
+	&dev_attr_set_usb_online,
+	NULL
+};
+
+static int lpm_test_create_device(struct dwc3_msm *motg)
+{
+	struct device_attribute **attrs = lpm_test_attributes;
+	struct device_attribute *attr;
+	struct dwc3 *dwc = platform_get_drvdata(motg->dwc3);
+	int err;
+
+	if (dwc->core_id == 0)
+		pr_info("%s\n", __func__);
+	else
+		return 0;
+
+	motg->lpm_test_class = class_create(THIS_MODULE, "charger");
+	if (IS_ERR(motg->lpm_test_class))
+		return PTR_ERR(motg->lpm_test_class);
+
+	motg->lpm_test_dev = device_create(motg->lpm_test_class, NULL, 0, NULL, "test");
+	if (IS_ERR(motg->lpm_test_dev))
+		return PTR_ERR(motg->lpm_test_dev);
+
+	dev_set_drvdata(motg->lpm_test_dev, motg);
+
+	while ((attr = *attrs++)) {
+		err = device_create_file(motg->lpm_test_dev, attr);
+		if (err) {
+			device_destroy(motg->lpm_test_class, 0);
+			return err;
+		}
+	}
+	return 0;
+}
 #define DP_PULSE_WIDTH_MSEC 200
 
 static int dwc3_msm_vbus_notifier(struct notifier_block *nb,
@@ -3308,6 +3393,10 @@ static int dwc3_msm_vbus_notifier(struct notifier_block *nb,
 	struct dwc3_msm *mdwc = enb->mdwc;
 	char *eud_str;
 	const char *edev_name;
+
+	/* Usb online lpm test requirement, 3/5 */
+	if (forge_usb_offline)
+		forge_usb_offline = 0;
 
 	if (!edev || !mdwc)
 		return NOTIFY_DONE;
@@ -3482,6 +3571,44 @@ static ssize_t mode_store(struct device *dev, struct device_attribute *attr,
 }
 
 static DEVICE_ATTR_RW(mode);
+
+#ifdef ZTE_DISABLE_HOST_MODE
+static ssize_t host_mode_show(struct device *dev, struct device_attribute *attr,
+		char *buf)
+{
+	struct dwc3_msm *mdwc = dev_get_drvdata(dev);
+
+	if (mdwc->vbus_active)
+		return snprintf(buf, PAGE_SIZE, "peripheral\n");
+	if (mdwc->id_state == DWC3_ID_GROUND)
+		return snprintf(buf, PAGE_SIZE, "host\n");
+
+	return snprintf(buf, PAGE_SIZE, "none\n");
+}
+
+static ssize_t host_mode_store(struct device *dev, struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	struct dwc3_msm *mdwc = dev_get_drvdata(dev);
+
+	if (sysfs_streq(buf, "peripheral")) {
+		mdwc->vbus_active = true;
+		mdwc->id_state = DWC3_ID_FLOAT;
+	} else if (sysfs_streq(buf, "host")) {
+		mdwc->vbus_active = false;
+		mdwc->id_state = DWC3_ID_GROUND;
+	} else {
+		mdwc->vbus_active = false;
+		mdwc->id_state = DWC3_ID_FLOAT;
+	}
+
+	dwc3_ext_event_notify(mdwc);
+
+	return count;
+}
+
+static DEVICE_ATTR_RW(host_mode);
+#endif
 static void msm_dwc3_perf_vote_work(struct work_struct *w);
 
 /* This node only shows max speed supported dwc3 and it should be
@@ -4008,9 +4135,22 @@ static int dwc3_msm_probe(struct platform_device *pdev)
 
 	device_create_file(&pdev->dev, &dev_attr_orientation);
 	device_create_file(&pdev->dev, &dev_attr_mode);
+#ifdef ZTE_DISABLE_HOST_MODE
+	device_create_file(&pdev->dev, &dev_attr_host_mode);
+#endif
 	device_create_file(&pdev->dev, &dev_attr_speed);
 	device_create_file(&pdev->dev, &dev_attr_usb_compliance_mode);
 	device_create_file(&pdev->dev, &dev_attr_bus_vote);
+
+	/* Usb online lpm test requirement, 4/5 */
+	ret = lpm_test_create_device(mdwc);
+	if (ret) {
+		dev_err(&pdev->dev, "fail to setup lpm_test_device\n");
+	}
+
+	if (mdwc->base) {
+		the_mdwc_base = mdwc->base;
+	}
 
 	return 0;
 
@@ -4033,6 +4173,9 @@ static int dwc3_msm_remove(struct platform_device *pdev)
 	int ret_pm;
 
 	device_remove_file(&pdev->dev, &dev_attr_mode);
+#ifdef ZTE_DISABLE_HOST_MODE
+	device_remove_file(&pdev->dev, &dev_attr_host_mode);
+#endif
 
 	if (mdwc->dpdm_nb.notifier_call) {
 		regulator_unregister_notifier(mdwc->dpdm_reg, &mdwc->dpdm_nb);
@@ -4210,6 +4353,12 @@ static int dwc3_otg_start_host(struct dwc3_msm *mdwc, int on)
 	struct dwc3 *dwc = platform_get_drvdata(mdwc->dwc3);
 	int ret = 0;
 
+#ifdef ZTE_DISABLE_HOST_MODE
+	if (mdwc->in_host_mode == false) {
+		if (disable_host_mode == 1)
+			return 0;
+	}
+#endif
 	/*
 	 * The vbus_reg pointer could have multiple values
 	 * NULL: regulator_get() hasn't been called, or was previously deferred
@@ -4372,6 +4521,25 @@ static void dwc3_override_vbus_status(struct dwc3_msm *mdwc, bool vbus_present)
 }
 
 /**
+ * dwc3_uevent -  notify usb peripheral's on/off state to userspace.
+ *
+ * @mdwc: Pointer to the dwc3_msm structure.
+ * @on:   Turn ON/OFF the gadget.
+ */
+static void dwc3_uevent(struct dwc3_msm *mdwc, int state)
+{
+	char *online[2] = { "USB_STATE=ONLINE", NULL };
+	char *offline[2] = { "USB_STATE=OFFLINE", NULL };
+	char **uevent_envp = NULL;
+
+	uevent_envp = state ? online : offline;
+
+	if (uevent_envp && mdwc->lpm_test_dev) {
+		pr_info("%s: sent uevent %s\n", __func__, uevent_envp[0]);
+		kobject_uevent_env(&mdwc->lpm_test_dev->kobj, KOBJ_CHANGE, uevent_envp);
+	}
+}
+/**
  * dwc3_otg_start_peripheral -  bind/unbind the peripheral controller.
  *
  * @mdwc: Pointer to the dwc3_msm structure.
@@ -4448,6 +4616,8 @@ static int dwc3_otg_start_peripheral(struct dwc3_msm *mdwc, int on)
 		set_bit(WAIT_FOR_LPM, &mdwc->inputs);
 	}
 
+	/* notify usb peripheral's on/off state to userspace */
+	dwc3_uevent(mdwc, on);
 	pm_runtime_put_sync(mdwc->dev);
 	dbg_event(0xFF, "StopGdgt psync",
 		atomic_read(&mdwc->dev->power.usage_count));
@@ -4497,6 +4667,10 @@ static int get_psy_type(struct dwc3_msm *mdwc)
 
 	if (mdwc->charging_disabled)
 		return -EINVAL;
+
+	/* Usb online lpm test requirement, 5/5 */
+	if (forge_usb_offline)
+		return 0;
 
 	if (!mdwc->usb_psy) {
 		mdwc->usb_psy = power_supply_get_by_name("usb");

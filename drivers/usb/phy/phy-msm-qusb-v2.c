@@ -479,6 +479,7 @@ static void msm_usb_write_readback(void __iomem *base, u32 offset,
 			__func__, val, offset);
 }
 
+static void param_override_init(struct qusb_phy *phy);
 static void qusb_phy_reset(struct qusb_phy *qphy)
 {
 	int ret;
@@ -493,6 +494,7 @@ static void qusb_phy_reset(struct qusb_phy *qphy)
 	if (ret)
 		dev_err(qphy->phy.dev, "%s: phy_reset deassert failed\n",
 							__func__);
+	param_override_init(qphy);
 }
 
 static bool qusb_phy_pll_locked(struct qusb_phy *qphy)
@@ -506,6 +508,99 @@ static bool qusb_phy_pll_locked(struct qusb_phy *qphy)
 
 	return (val & VSTATUS_PLL_LOCK_STATUS_MASK);
 }
+/* for usb eye diagram test */
+static struct qusb_phy *the_msm_phy;
+static int param_override_testing;
+static int param_override[] = {
+	-1, -1,
+	-1, -1,
+	-1, -1,
+	-1, -1,
+	-1, -1,
+	-1
+};
+
+static void param_override_init(struct qusb_phy *phy)
+{
+	/* struct msm_otg_platform_data *pdata = motg->pdata; */
+	/* seq = pdata->phy_init_seq_override if need */
+	int *seq = NULL;
+
+	if (param_override_testing) {
+		seq = param_override;
+		/* phy->pdata->phy_init_seq = param_override; */
+	}
+
+	if (!seq) {
+		dev_err(phy->phy.dev, "usb %s param_override_init is null, skip\n", __func__);
+		return;
+	}
+
+	while (seq[0] >= 0) {
+		dev_info(phy->phy.dev, "usb param_override_init: write 0x%02x to 0x%02x\n",
+				seq[0], seq[1]);
+		msm_usb_write_readback(phy->base, seq[0], 0xff, seq[1]);
+		seq += 2;
+	}
+}
+
+static int diagram_param_write(const char *val, const struct kernel_param *kp)
+{
+	int err, size, i = 0;
+	char buf[256] = {0};
+	char *b;
+	char *value;
+	unsigned long tmp;
+	struct qusb_phy *phy = the_msm_phy;
+
+	dev_info(phy->phy.dev, "usb diagram_param_write val = %s\n", val);
+
+	size = sizeof(param_override)-1;
+	strlcpy(buf, val, sizeof(buf));
+	b = strim(buf);
+	while (b) {
+		value = strsep(&b, ",");
+		if (value) {
+			err = kstrtoul(value, 16, &tmp);
+			if (err) {
+				dev_err(phy->phy.dev, "%s kstrtoul failed\n", __func__);
+				param_override_testing = 0;
+				goto out;
+			}
+			if (i < size)
+				param_override[i] = (int)tmp;
+			i++;
+			if (!param_override_testing)
+				param_override_testing = 1;
+		}
+	}
+
+	param_override_init(phy);
+
+out:
+	return strlen(val);
+}
+
+static int diagram_param_read_6350(char *buf, const struct kernel_param *kp)
+{
+	int i = 0;
+	u32 reg[5] = {0x198, 0x240, 0x244, 0x24c, 0x250};
+	char *buff = buf;
+	struct qusb_phy *phy = the_msm_phy;
+
+	for (i = 0; i < 5; i++) {
+		buff += scnprintf(buff, PAGE_SIZE,
+			"REG[0x%02x]=0x%2x,", phy->base+reg[i], readl_relaxed(phy->base + reg[i]));
+	}
+	if (buff != buf)
+		*(buff-1) = '\n';
+	return buff - buf;
+
+}
+
+module_param_call(diagram_param_6350, diagram_param_write, diagram_param_read_6350,
+		  NULL, 0664);
+MODULE_PARM_DESC(diagram_param_6350, "6350 USB eye diagram_param");
 
 static void qusb_phy_host_init(struct usb_phy *phy)
 {
@@ -597,6 +692,8 @@ static int qusb_phy_init(struct usb_phy *phy)
 			qusb_phy_write_seq(qphy->base, qphy->qusb_phy_init_seq,
 					qphy->init_seq_len, 0);
 
+		param_override_init(qphy);
+
 		/* Wait for 5ms as per QUSB2 RUMI sequence */
 		usleep_range(5000, 7000);
 
@@ -647,6 +744,7 @@ static int qusb_phy_init(struct usb_phy *phy)
 		writel_relaxed(qphy->bias_ctrl2,
 				qphy->base + qphy->phy_reg[BIAS_CTRL_2]);
 
+	param_override_init(qphy);
 	/* ensure above writes are completed before re-enabling PHY */
 	wmb();
 
@@ -1338,6 +1436,7 @@ static int qusb_phy_probe(struct platform_device *pdev)
 	if (qphy->eud_enable_reg && readl_relaxed(qphy->eud_enable_reg))
 		qusb_phy_enable_power(qphy);
 
+	the_msm_phy = qphy;
 	return ret;
 }
 
