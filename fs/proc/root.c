@@ -177,6 +177,7 @@ void __init proc_root_init(void)
 	proc_uid_init();
 	proc_mkdir("fs", NULL);
 	proc_mkdir("driver", NULL);
+	proc_mkdir("driver/debug", NULL);
 	proc_create_mount_point("fs/nfsd"); /* somewhere for the nfsd filesystem to be mounted */
 #if defined(CONFIG_SUN_OPENPROMFS) || defined(CONFIG_SUN_OPENPROMFS_MODULE)
 	/* just give it a mountpoint */
