@@ -232,4 +232,13 @@ source "drivers/sensors/Kconfig"
 source "drivers/gpu/msm/Kconfig"
 
 source "drivers/energy_model/Kconfig"
+
+source "drivers/vendor/common/Kconfig"
+
+source "drivers/vendor/soc/qcom/Kconfig"
+
+config ZTE_BOOT_MODE
+	bool
+	default y
+
 endmenu
