@@ -104,7 +104,7 @@ static int fsa4480_usbc_event_changed(struct notifier_block *nb,
 		return ret;
 	}
 
-	dev_dbg(dev, "%s: USB change event received, supply mode %d, usbc mode %d, expected %d\n",
+	dev_info(dev, "%s: USB change event received, supply mode %d, usbc mode %d, expected %d\n",
 		__func__, mode.intval, fsa_priv->usbc_mode.counter,
 		POWER_SUPPLY_TYPEC_SINK_AUDIO_ADAPTER);
 
@@ -147,7 +147,7 @@ static int fsa4480_usbc_analog_setup_switches(struct fsa4480_priv *fsa_priv)
 			__func__, rc);
 		goto done;
 	}
-	dev_dbg(dev, "%s: setting GPIOs active = %d\n",
+	dev_info(dev, "%s: setting GPIOs active = %d\n",
 		__func__, mode.intval != POWER_SUPPLY_TYPEC_NONE);
 
 	switch (mode.intval) {
@@ -292,6 +292,9 @@ int fsa4480_switch_event(struct device_node *node,
 	int switch_control = 0;
 	struct i2c_client *client = of_find_i2c_device_by_node(node);
 	struct fsa4480_priv *fsa_priv;
+
+	/* ZTE_chenjun */
+	pr_info("%s: event %d\n", __func__, event);
 
 	if (!client)
 		return -EINVAL;

@@ -22,6 +22,8 @@
 #define GET_PDATA_OF_ATTR(attr) \
 	(container_of(attr, struct msm_rpmstats_kobj_attr, ka)->pd)
 
+unsigned long long vminRecorder = 0;
+
 struct msm_rpmstats_record {
 	char name[32];
 	u32 id;
@@ -196,6 +198,77 @@ static ssize_t rpmstats_show(struct kobject *kobj,
 	return length;
 }
 
+/* zte_pm show rpm and sleep clk ++++ */
+static struct msm_rpmstats_platform_data *rpm_data = NULL;
+static unsigned long long vmin_count = 0;
+extern void pm_show_rpmh_master_stats(void);
+extern void debug_suspend_enabled(void);
+extern void debug_suspend_disable(void);
+
+void pm_show_rpm_stats(void)
+{
+	struct msm_rpmstats_private_data prvdata = {0};
+	struct msm_rpmstats_platform_data *pdata = NULL;
+	static char buf[1024] = {0};
+	char *temp = NULL;
+	unsigned long long count = 0;
+	unsigned long long clkPrintFlag = 5000;
+
+	pdata = rpm_data;
+	if (!pdata) {
+		pr_err("%s: ERROR pdata=NULL\n", __func__);
+		return;
+	}
+
+	prvdata.reg_base = ioremap_nocache(pdata->phys_addr_base, pdata->phys_size);
+	if (!prvdata.reg_base) {
+		pr_err("%s ERROR, could not ioremap start=%pa, len=%u\n",
+				__func__, &pdata->phys_addr_base, pdata->phys_size);
+		return;
+	}
+
+	prvdata.read_idx = prvdata.len = 0;
+	prvdata.platform_data = pdata;
+	prvdata.num_records = pdata->num_records;
+	if (prvdata.read_idx < prvdata.num_records)
+		prvdata.len = msm_rpmstats_copy_stats(&prvdata);
+
+	scnprintf(buf, prvdata.len, prvdata.buf);
+	if (false) {
+		/* zte_pm notes: len(buf) > prvdata.len */
+		pr_info(" prvdata.len=%u\n", prvdata.len);
+	}
+
+	temp = strnstr(buf, "cxsd\n\t count:", prvdata.len);
+	if (temp == NULL) {
+		pr_err("%s: ERROR read cxsd msm_rpmstats_private_data\n", __func__);
+		return;
+	}
+
+	iounmap(prvdata.reg_base);
+	if (sscanf(temp+strlen("cxsd\n\t count:"), "%llu\n", &count) == 1) {
+		if (vmin_count != count) {
+			pr_info("count: last %llu now %llu , enter cxsd succeed, enter vdd_min succeed\n",
+						vmin_count, count);
+			vmin_count = count;
+			if (count - vminRecorder >= clkPrintFlag) {
+				vminRecorder = count;
+				debug_suspend_enabled();
+			} else {
+				debug_suspend_disable();
+			}
+		} else {
+			pr_info("count: last %llu now %llu, enter cxsd failed, enter vdd_min failed",
+						vmin_count, count);
+			pm_show_rpmh_master_stats();
+			debug_suspend_enabled();
+		}
+	} else {
+		pr_err("%s: ERROR could not get cxsd count\n", __func__);
+	}
+}
+/* zte_pm show rpmh and sleep clk ++++ */
+
 static int msm_rpmstats_create_sysfs(struct platform_device *pdev,
 				struct msm_rpmstats_platform_data *pd)
 {
@@ -269,6 +342,10 @@ static int msm_rpmstats_probe(struct platform_device *pdev)
 	key = "qcom,num-records";
 	if (of_property_read_u32(pdev->dev.of_node, key, &pdata->num_records))
 		pdata->num_records = RPM_STATS_NUM_REC;
+
+	rpm_data = pdata; /* zte_pm */
+	if (!rpm_data)
+		pr_err("%s: ERROR msm_rpmstats_probe() rpm_data=NULL\n", __func__);
 
 	msm_rpmstats_create_sysfs(pdev, pdata);
 

@@ -26,6 +26,7 @@
 #define REG_DATA_HI 0x8
 
 #define GET_ADDR(REG, UNIT_NO) (REG + (UNIT_DIST * UNIT_NO))
+#define RPMH_SHOW_SIZE 1024
 
 enum master_smem_id {
 	MPSS = 605,
@@ -97,7 +98,7 @@ static DEFINE_MUTEX(rpmh_stats_mutex);
 
 static ssize_t msm_rpmh_master_stats_print_data(char *prvbuf, ssize_t length,
 				struct msm_rpmh_master_stats *record,
-				const char *name)
+				const char *name, int log_flag)
 {
 	uint64_t accumulated_duration = record->accumulated_duration;
 	/*
@@ -111,7 +112,13 @@ static ssize_t msm_rpmh_master_stats_print_data(char *prvbuf, ssize_t length,
 				(arch_counter_get_cntvct()
 				- record->last_entered);
 
-	return scnprintf(prvbuf, length, "%s\n\tVersion:0x%x\n"
+	if (log_flag == 1) {
+		return snprintf(prvbuf, length, "\n\t%s, Version:0x%x,Sleep Count:0x%x,"
+			"Sleep Last Entered At:0x%llx,Sleep Last Exited At:0x%llx,Sleep Accumulated Duration:0x%llx",
+			name, record->version_id, record->counts,
+			record->last_entered, record->last_exited, accumulated_duration);
+	} else {
+		return scnprintf(prvbuf, length, "%s\n\tVersion:0x%x\n"
 			"\tSleep Count:0x%x\n"
 			"\tSleep Last Entered At:0x%llx\n"
 			"\tSleep Last Exited At:0x%llx\n"
@@ -119,6 +126,8 @@ static ssize_t msm_rpmh_master_stats_print_data(char *prvbuf, ssize_t length,
 			name, record->version_id, record->counts,
 			record->last_entered, record->last_exited,
 			accumulated_duration);
+	}
+
 }
 
 static ssize_t msm_rpmh_master_stats_show(struct kobject *kobj,
@@ -126,6 +135,7 @@ static ssize_t msm_rpmh_master_stats_show(struct kobject *kobj,
 {
 	ssize_t length;
 	int i = 0;
+	int log_flag = 0;
 	struct msm_rpmh_master_stats *record = NULL;
 
 	mutex_lock(&rpmh_stats_mutex);
@@ -133,7 +143,7 @@ static ssize_t msm_rpmh_master_stats_show(struct kobject *kobj,
 	/* First Read APSS master stats */
 
 	length = msm_rpmh_master_stats_print_data(buf, PAGE_SIZE,
-						&apss_master_stats, "APSS");
+						&apss_master_stats, "APSS", log_flag);
 
 	/* Read SMEM data written by other masters */
 
@@ -145,13 +155,48 @@ static ssize_t msm_rpmh_master_stats_show(struct kobject *kobj,
 			length += msm_rpmh_master_stats_print_data(
 					buf + length, PAGE_SIZE - length,
 					record,
-					rpmh_masters[i].master_name);
+					rpmh_masters[i].master_name,
+					log_flag);
 	}
 
 	mutex_unlock(&rpmh_stats_mutex);
 
 	return length;
 }
+/* zte_pm - begin */
+void pm_show_rpmh_master_stats(void)
+{
+	ssize_t length;
+	int i = 0;
+	int log_flag = 1;
+	size_t	size = 0;
+	struct msm_rpmh_master_stats *record = NULL;
+	static char buf[RPMH_SHOW_SIZE] = {0};
+
+	mutex_lock(&rpmh_stats_mutex);
+
+	length = msm_rpmh_master_stats_print_data(buf, RPMH_SHOW_SIZE, &apss_master_stats, "APSS", log_flag);
+
+	for (i = 0; i < ARRAY_SIZE(rpmh_masters); i++) {
+		record = (struct msm_rpmh_master_stats *) qcom_smem_get(
+					rpmh_masters[i].pid,
+					rpmh_masters[i].smem_id, &size);
+		if (!IS_ERR_OR_NULL(record) && (PAGE_SIZE - length > 0))
+			length += msm_rpmh_master_stats_print_data(
+					buf + length, PAGE_SIZE - length,
+					record,
+					rpmh_masters[i].master_name,
+					log_flag);
+	}
+	if (length > 1024) {
+		pr_err("%s: ERROR zte_pm rmph_master_stats buffer len=%d\n", __func__, length);
+	} else {
+		pr_info("zte_pm rmph_master_stats:%s\n ", buf);
+	}
+
+	mutex_unlock(&rpmh_stats_mutex);
+}
+/* zte_pm - end */
 
 static inline void msm_rpmh_apss_master_stats_update(
 				struct msm_rpmh_profile_unit *profile_unit)
