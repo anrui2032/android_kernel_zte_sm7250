@@ -963,6 +963,12 @@ fail:
 						ADC_HC_VDD_REF, chip->data);
 			of_thermal_handle_trip_temp(chip->sensor[i].tzd,
 						temp);
+			/* zte_pm add */
+			if (chip->sensor[i].tzd != NULL) {
+				pr_info("zte_pm thermal irq, name=%s temp=%d\n",
+					chip->sensor[i].tzd->type, temp);
+			}
+			/* zte_pm add end */
 		} else {
 			if (lower_set) {
 				ret = adc_tm5_reg_update(chip,
