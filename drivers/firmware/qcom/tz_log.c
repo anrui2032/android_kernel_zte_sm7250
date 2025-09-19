@@ -21,6 +21,7 @@
 #include <soc/qcom/scm.h>
 #include <soc/qcom/qseecomi.h>
 #include <soc/qcom/qtee_shmbridge.h>
+#include <vendor/soc/qcom/debug_policy.h>
 
 /* QSEE_LOG_BUF_SIZE = 32K */
 #define QSEE_LOG_BUF_SIZE 0x8000
@@ -1020,6 +1021,13 @@ static int tz_log_probe(struct platform_device *pdev)
 	phys_addr_t tzdiag_phy_iobase;
 	uint32_t *ptr = NULL;
 	int ret = 0;
+
+#ifdef CONFIG_ANDROID_ZLOG
+#ifdef CONFIG_ANDROID_ZLOG_BUFFER
+	if (!is_kernel_log_driver_enabled())
+		return 0;
+#endif
+#endif
 
 	/*
 	 * Get address that stores the physical location diagnostic data
