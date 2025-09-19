@@ -406,8 +406,12 @@ static void gi2c_gsi_tx_cb(void *ptr)
 	struct msm_gpi_dma_async_tx_cb_param *tx_cb = ptr;
 	struct geni_i2c_dev *gi2c = tx_cb->userdata;
 
-	gi2c_gsi_cb_err(tx_cb, "TX");
-	complete(&gi2c->xfer);
+	if (tx_cb->completion_code == MSM_GPI_TCE_EOB && gi2c->is_shared) {
+		complete(&gi2c->xfer);
+	} else if (!(gi2c->cur->flags & I2C_M_RD)) {
+		gi2c_gsi_cb_err(tx_cb, "TX");
+		complete(&gi2c->xfer);
+	}
 }
 
 static void gi2c_gsi_rx_cb(void *ptr)
@@ -553,16 +557,12 @@ static int geni_i2c_gsi_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[],
 
 		if (msgs[i].flags & I2C_M_RD) {
 			go_t->dword[2] = MSM_GPI_I2C_GO_TRE_DWORD2(msgs[i].len);
-			/*
-			 * For Rx Go tre: Set ieob for non-shared se and for all
-			 * but last transfer in shared se
-			 */
-			if (!gi2c->is_shared || (gi2c->is_shared && i != num-1))
-				go_t->dword[3] = MSM_GPI_I2C_GO_TRE_DWORD3(1, 0,
-								0, 1, 0);
+			if (gi2c->is_shared)
+				go_t->dword[3] = MSM_GPI_I2C_GO_TRE_DWORD3(1,
+							0, 0, 0, 0);
 			else
-				go_t->dword[3] = MSM_GPI_I2C_GO_TRE_DWORD3(1, 0,
-								0, 0, 0);
+				go_t->dword[3] = MSM_GPI_I2C_GO_TRE_DWORD3(1,
+							0, 0, 1, 0);
 		} else {
 			/* For Tx Go tre: ieob is not set, chain bit is set */
 			go_t->dword[2] = MSM_GPI_I2C_GO_TRE_DWORD2(0);
