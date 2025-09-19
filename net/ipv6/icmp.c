@@ -71,6 +71,7 @@
 #include <net/l3mdev.h>
 
 #include <linux/uaccess.h>
+#include <net/net_log.h> /* ZTE_LC_IP_DEBUG */
 
 /*
  *	The ICMP socket(s). This is the most convenient way to flow control
@@ -436,6 +437,7 @@ static void icmp6_send(struct sk_buff *skb, u8 type, u8 code, __u32 info,
 	int addr_type = 0;
 	int len;
 	u32 mark;
+	kuid_t uid = GLOBAL_ROOT_UID; /* ZTE_LC_IP_DEBUG */
 
 	if ((u8 *)hdr < skb->head ||
 	    (skb_network_header(skb) + sizeof(*hdr)) > skb_tail_pointer(skb))
@@ -572,6 +574,19 @@ static void icmp6_send(struct sk_buff *skb, u8 type, u8 code, __u32 info,
 
 	rcu_read_lock();
 	idev = __in6_dev_get(skb->dev);
+
+	/* ZTE_LC_IP_DEBUG begin */
+	if (tcp_socket_debugfs & TCP_IPV6_LOG_ENABLE) {
+		if (sk)
+			uid = sk ? sk->sk_uid : GLOBAL_ROOT_UID;
+		if (!uid_valid(uid))
+			uid = GLOBAL_ROOT_UID;
+
+		pr_log_info("[IPv6]ICMPV6 SEND uid=%d, Gpid:%d (%s), %pI6 -> %pI6, T = %d, C = %d\n",
+			uid.val, current->group_leader->pid, current->group_leader->comm,
+			&hdr->saddr, &hdr->daddr, type, code);
+	}
+	/* ZTE_LC_IP_DEBUG end */
 
 	if (ip6_append_data(sk, icmpv6_getfrag, &msg,
 			    len + sizeof(struct icmp6hdr),
@@ -805,6 +820,10 @@ static int icmpv6_rcv(struct sk_buff *skb)
 	struct icmp6hdr *hdr;
 	u8 type;
 	bool success = false;
+	/* ZTE_LC_IP_DEBUG begin */
+	struct sock *sk = skb->sk;
+	kuid_t uid = GLOBAL_ROOT_UID;
+	/* ZTE_LC_IP_DEBUG end */
 
 	if (!xfrm6_policy_check(NULL, XFRM_POLICY_IN, skb)) {
 		struct sec_path *sp = skb_sec_path(skb);
@@ -919,6 +938,18 @@ static int icmpv6_rcv(struct sk_buff *skb)
 	/* until the v6 path can be better sorted assume failure and
 	 * preserve the status quo behaviour for the rest of the paths to here
 	 */
+	/* ZTE_LC_IP_DEBUG begin */
+	if (tcp_socket_debugfs & TCP_IPV6_LOG_ENABLE) {
+		if (sk)
+			uid = sk ? sk->sk_uid : GLOBAL_ROOT_UID;
+		if (!uid_valid(uid))
+			uid = GLOBAL_ROOT_UID;
+
+		pr_log_info("[IPv6]ICMPV6 RCV uid=%d, Gpid:%d (%s), %pI6 <- %pI6, T = %d, C = %d\n",
+			uid.val, current->group_leader->pid, current->group_leader->comm,
+			saddr, daddr, type, hdr->icmp6_code);
+	}
+	/* ZTE_LC_IP_DEBUG end */
 	if (success)
 		consume_skb(skb);
 	else
