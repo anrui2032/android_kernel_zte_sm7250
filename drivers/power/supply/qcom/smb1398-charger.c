@@ -2049,7 +2049,7 @@ static int smb1398_div2_cp_hw_init(struct smb1398_chip *chip)
 	return rc;
 }
 
-#define DIV2_CP_MIN_ILIM_UA 1000000
+#define DIV2_CP_MIN_ILIM_UA 750000
 static int smb1398_div2_cp_parse_dt(struct smb1398_chip *chip)
 {
 	int rc = 0;

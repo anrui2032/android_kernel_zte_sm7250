@@ -117,7 +117,8 @@ enum {
 	FORCE_INOV_DISABLE_BIT	= BIT(1),
 };
 
-static int debug_mask;
+static int debug_mask = PR_PARALLEL;
+module_param_named(debug_mask, debug_mask, int, 0600);
 
 #define pl_dbg(chip, reason, fmt, ...)				\
 	do {								\
@@ -998,7 +999,7 @@ static int pl_fcc_vote_callback(struct votable *votable, void *data,
 			 * falls below 2 * min ICL threshold.
 			 */
 			vote(chip->cp_disable_votable, FCC_VOTER,
-			     (cp_fcc_ua < (2 * pval.intval)), 0);
+			     (total_fcc_ua < (2 * pval.intval)), 0);
 		}
 	}
 
@@ -1610,7 +1611,7 @@ static int pl_awake_vote_callback(struct votable *votable,
 	else
 		__pm_relax(chip->pl_ws);
 
-	pr_debug("client: %s awake: %d\n", client, awake);
+	pl_dbg(chip, PR_PARALLEL, "client: %s awake: %d\n", client, awake);
 	return 0;
 }
 

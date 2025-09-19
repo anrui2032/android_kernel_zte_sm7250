@@ -645,6 +645,30 @@ out:
 DEFINE_DEBUGFS_ATTRIBUTE(votable_force_ops, force_active_get, force_active_set,
 		"%lld\n");
 
+int vote_force_active(struct votable *votable, bool enabled, int val)
+{
+	int rc = 0;
+
+	pr_err("%s: %s\n", __func__, votable->name);
+	lock_votable(votable);
+	votable->force_active = enabled;
+	votable->force_val = val;
+
+	if (!votable->callback)
+		goto out;
+
+	if (enabled) {
+		rc = votable->callback(votable, votable->data, votable->force_val, DEBUG_FORCE_CLIENT);
+	} else {
+		rc = votable->callback(votable, votable->data,
+			votable->effective_result,
+			get_client_str(votable, votable->effective_client_id));
+	}
+out:
+	unlock_votable(votable);
+	return rc;
+}
+
 static int show_votable_clients(struct seq_file *m, void *data)
 {
 	struct votable *votable = m->private;

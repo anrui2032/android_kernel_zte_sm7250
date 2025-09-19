@@ -32,6 +32,7 @@ struct qg_dt {
 	int			vbatt_low_cold_mv;
 	int			vbatt_cutoff_mv;
 	int			iterm_ma;
+	int			iterm_ma_backup;
 	int			s2_fifo_length;
 	int			s2_vbat_low_fifo_length;
 	int			s2_acc_length;
@@ -73,6 +74,7 @@ struct qg_dt {
 	bool			qg_fast_chg_cfg;
 	bool			fvss_enable;
 	bool			multi_profile_load;
+	int             full_design_uah;
 	bool			tcss_enable;
 	bool			bass_enable;
 };
@@ -112,6 +114,7 @@ struct qpnp_qg {
 	struct votable		*vbatt_irq_disable_votable;
 	struct votable		*fifo_irq_disable_votable;
 	struct votable		*good_ocv_irq_disable_votable;
+	struct votable		*topoff_votable;
 	u32			qg_base;
 	u8			qg_subtype;
 	u8			qg_mode;
@@ -189,6 +192,7 @@ struct qpnp_qg {
 	int			pon_soc;
 	int			batt_soc;
 	int			cc_soc;
+	int			batt_soc_charged;
 	int			full_soc;
 	int			sys_soc;
 	int			last_adj_ssoc;

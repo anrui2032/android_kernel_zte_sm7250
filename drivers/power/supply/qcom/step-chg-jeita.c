@@ -59,6 +59,9 @@ struct step_chg_info {
 	int			get_config_retry_count;
 
 	struct step_chg_cfg	*step_chg_config;
+	int			jeita_cool_step_chg_idx;
+	int			jeita_cool_step_chg_fcc;
+	int			jeita_cool_step_chg_fv;
 	struct jeita_fcc_cfg	*jeita_fcc_config;
 	struct jeita_fv_cfg	*jeita_fv_config;
 
@@ -231,6 +234,7 @@ static int get_step_chg_jeita_setting_from_profile(struct step_chg_info *chip)
 	const __be32 *handle;
 	int batt_id_ohms, rc, hysteresis[2] = {0};
 	union power_supply_propval prop = {0, };
+	int i;
 
 	handle = of_get_property(chip->dev->of_node,
 			"qcom,battery-data", NULL);
@@ -258,6 +262,11 @@ static int get_step_chg_jeita_setting_from_profile(struct step_chg_info *chip)
 
 	profile_node = of_batterydata_get_best_profile(batt_node,
 					batt_id_ohms / 1000, NULL);
+	if (profile_node == NULL) {
+		pr_err("profile_node is null, get one more.\n");
+		profile_node = of_batterydata_get_best_profile(batt_node,
+					batt_id_ohms / 1000, NULL);
+	}
 	if (IS_ERR(profile_node))
 		return PTR_ERR(profile_node);
 
@@ -331,9 +340,28 @@ static int get_step_chg_jeita_setting_from_profile(struct step_chg_info *chip)
 			chip->soc_based_step_chg ? 100 : max_fv_uv,
 			max_fcc_ma * 1000);
 	if (rc < 0) {
-		pr_debug("Read qcom,step-chg-ranges failed from battery profile, rc=%d\n",
+		pr_info("Read qcom,step-chg-ranges failed from battery profile, rc=%d\n",
 					rc);
 		chip->step_chg_cfg_valid = false;
+	}
+
+	rc = of_property_read_u32(profile_node, "qcom,jeita-cool-step-chg-idx",
+					&chip->jeita_cool_step_chg_idx);
+	if (rc < 0) {
+		pr_err("qcom,jeita-cool-step-chg-idx reading failed, rc=%d\n", rc);
+		chip->jeita_cool_step_chg_idx = -1;
+	}
+	rc = of_property_read_u32(profile_node, "qcom,jeita-cool-step-chg-fcc",
+					&chip->jeita_cool_step_chg_fcc);
+	if (rc < 0) {
+		pr_err("qcom,jeita-cool-step-chg-fcc reading failed, rc=%d\n", rc);
+		chip->jeita_cool_step_chg_fcc = -1;
+	}
+	rc = of_property_read_u32(profile_node, "qcom,jeita-cool-step-chg-fv",
+					&chip->jeita_cool_step_chg_fv);
+	if (rc < 0) {
+		pr_err("qcom,jeita-cool-step-chg-fv reading failed, rc=%d\n", rc);
+		chip->jeita_cool_step_chg_fv = -1;
 	}
 
 	chip->sw_jeita_cfg_valid = true;
@@ -342,9 +370,15 @@ static int get_step_chg_jeita_setting_from_profile(struct step_chg_info *chip)
 			chip->jeita_fcc_config->fcc_cfg,
 			BATT_HOT_DECIDEGREE_MAX, max_fcc_ma * 1000);
 	if (rc < 0) {
-		pr_debug("Read qcom,jeita-fcc-ranges failed from battery profile, rc=%d\n",
+		pr_info("Read qcom,jeita-fcc-ranges failed from battery profile, rc=%d\n",
 					rc);
 		chip->sw_jeita_cfg_valid = false;
+	}
+	for (i = 0; i < MAX_STEP_CHG_ENTRIES; i++) {
+		pr_info("fcc param low: %d, high: %d, value: %d\n",
+				chip->jeita_fcc_config->fcc_cfg[i].low_threshold,
+				chip->jeita_fcc_config->fcc_cfg[i].high_threshold,
+				chip->jeita_fcc_config->fcc_cfg[i].value);
 	}
 
 	rc = of_property_read_u32_array(profile_node,
@@ -352,7 +386,7 @@ static int get_step_chg_jeita_setting_from_profile(struct step_chg_info *chip)
 	if (!rc) {
 		chip->jeita_fcc_config->param.rise_hys = hysteresis[0];
 		chip->jeita_fcc_config->param.fall_hys = hysteresis[1];
-		pr_debug("jeita-fcc-hys: rise_hys=%u, fall_hys=%u\n",
+		pr_info("jeita-fcc-hys: rise_hys=%u, fall_hys=%u\n",
 			hysteresis[0], hysteresis[1]);
 	}
 
@@ -361,9 +395,15 @@ static int get_step_chg_jeita_setting_from_profile(struct step_chg_info *chip)
 			chip->jeita_fv_config->fv_cfg,
 			BATT_HOT_DECIDEGREE_MAX, max_fv_uv);
 	if (rc < 0) {
-		pr_debug("Read qcom,jeita-fv-ranges failed from battery profile, rc=%d\n",
+		pr_info("Read qcom,jeita-fv-ranges failed from battery profile, rc=%d\n",
 					rc);
 		chip->sw_jeita_cfg_valid = false;
+	}
+	for (i = 0; i < MAX_STEP_CHG_ENTRIES; i++) {
+		pr_info("fv param low: %d, high: %d, value: %d\n",
+				chip->jeita_fv_config->fv_cfg[i].low_threshold,
+				chip->jeita_fv_config->fv_cfg[i].high_threshold,
+				chip->jeita_fv_config->fv_cfg[i].value);
 	}
 
 	return rc;
@@ -627,6 +667,7 @@ static int handle_jeita(struct step_chg_info *chip)
 {
 	union power_supply_propval pval = {0, };
 	int rc = 0, fcc_ua = 0, fv_uv = 0;
+	int temp = -1, voltage_now = -1;
 	u64 elapsed_us;
 
 	rc = power_supply_get_property(chip->batt_psy,
@@ -663,16 +704,36 @@ static int handle_jeita(struct step_chg_info *chip)
 				chip->jeita_fcc_config->param.prop_name, rc);
 		return rc;
 	}
+	temp = pval.intval;
 
 	rc = get_val(chip->jeita_fcc_config->fcc_cfg,
 			chip->jeita_fcc_config->param.rise_hys,
 			chip->jeita_fcc_config->param.fall_hys,
 			chip->jeita_fcc_index,
-			pval.intval,
+			temp,
 			&chip->jeita_fcc_index,
 			&fcc_ua);
 	if (rc < 0)
 		fcc_ua = 0;
+
+	if (chip->jeita_cool_step_chg_fcc > 0 && chip->jeita_cool_step_chg_fv > 0 &&
+		chip->jeita_cool_step_chg_idx > -1) {
+		if (chip->jeita_fcc_index == chip->jeita_cool_step_chg_idx) {
+			rc = power_supply_get_property(chip->batt_psy,
+				POWER_SUPPLY_PROP_VOLTAGE_NOW, &pval);
+			if (rc < 0) {
+				pr_err("get voltage_now fail, skip");
+			} else {
+				voltage_now = pval.intval;
+				if (voltage_now > chip->jeita_cool_step_chg_fv) {
+					pr_info("handle cool temp step charge, replace fcc_ua from %d to %d\n",
+							fcc_ua, chip->jeita_cool_step_chg_fcc);
+					fcc_ua = chip->jeita_cool_step_chg_fcc;
+				}
+			}
+		}
+	}
+
 
 	if (!chip->fcc_votable)
 		chip->fcc_votable = find_votable("FCC");
@@ -686,7 +747,7 @@ static int handle_jeita(struct step_chg_info *chip)
 			chip->jeita_fv_config->param.rise_hys,
 			chip->jeita_fv_config->param.fall_hys,
 			chip->jeita_fv_index,
-			pval.intval,
+			temp,
 			&chip->jeita_fv_index,
 			&fv_uv);
 	if (rc < 0)
@@ -890,12 +951,12 @@ int qcom_step_chg_init(struct device *dev,
 
 	chip->jeita_fcc_config->param.psy_prop = POWER_SUPPLY_PROP_TEMP;
 	chip->jeita_fcc_config->param.prop_name = "BATT_TEMP";
-	chip->jeita_fcc_config->param.rise_hys = 10;
-	chip->jeita_fcc_config->param.fall_hys = 10;
+	chip->jeita_fcc_config->param.rise_hys = 15;
+	chip->jeita_fcc_config->param.fall_hys = 15;
 	chip->jeita_fv_config->param.psy_prop = POWER_SUPPLY_PROP_TEMP;
 	chip->jeita_fv_config->param.prop_name = "BATT_TEMP";
-	chip->jeita_fv_config->param.rise_hys = 10;
-	chip->jeita_fv_config->param.fall_hys = 10;
+	chip->jeita_fv_config->param.rise_hys = 15;
+	chip->jeita_fv_config->param.fall_hys = 15;
 
 	INIT_DELAYED_WORK(&chip->status_change_work, status_change_work);
 	INIT_DELAYED_WORK(&chip->get_config_work, get_config_work);

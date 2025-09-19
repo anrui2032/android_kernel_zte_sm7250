@@ -93,6 +93,18 @@ int fg_decode_value_16b(struct fg_sram_param *sp,
 	return sp[id].value;
 }
 
+int fg_decode_value_32b(struct fg_sram_param *sp,
+				enum fg_sram_param_id id, int value)
+{
+	int64_t temp = 0;
+
+	temp = (int64_t)value * sp[id].denmtr;
+	sp[id].value = div_u64(temp, sp[id].numrtr);
+	pr_debug("id: %d raw value: %x decoded value: %x\n", id, value,
+		sp[id].value);
+	return sp[id].value;
+}
+
 int fg_decode_default(struct fg_sram_param *sp, enum fg_sram_param_id id,
 				int value)
 {

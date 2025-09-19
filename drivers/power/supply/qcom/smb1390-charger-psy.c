@@ -73,6 +73,8 @@
 #define CFG_WIN_HI_MASK			GENMASK(3, 2)
 #define WIN_OV_LVL_1000MV		0x08
 
+#define WIN_OV_LVL_1200MV		0x0C  /* for update to 1.2v */
+
 #define CORE_FTRIM_MISC_REG		0x1034
 #define TR_WIN_1P5X_BIT			BIT(0)
 #define TR_IREV_BIT			BIT(1)
@@ -1245,6 +1247,7 @@ static void smb1390_taper_work(struct work_struct *work)
 	struct smb1390 *chip = container_of(work, struct smb1390, taper_work);
 	union power_supply_propval pval = {0, };
 	int rc, fcc_uA, delta_fcc_uA, main_fcc_ua = 0, fcc_cp_ua;
+	bool is_cp_disabled;
 
 	if (!is_psy_voter_available(chip))
 		goto out;
@@ -1277,6 +1280,7 @@ static void smb1390_taper_work(struct work_struct *work)
 		}
 
 		if (pval.intval == POWER_SUPPLY_CHARGE_TYPE_TAPER) {
+			is_cp_disabled = get_effective_result(chip->disable_votable);
 			delta_fcc_uA =
 				(smb1390_is_adapter_cc_mode(chip) ?
 							CC_MODE_TAPER_DELTA_UA :
@@ -1285,15 +1289,21 @@ static void smb1390_taper_work(struct work_struct *work)
 								- delta_fcc_uA;
 			smb1390_dbg(chip, PR_INFO, "taper work reducing FCC to %duA\n",
 				fcc_uA);
-			vote(chip->fcc_votable, CP_VOTER, true, fcc_uA);
-			rc = smb1390_validate_slave_chg_taper(chip, (fcc_uA -
-							      main_fcc_ua));
-			if (rc < 0) {
-				pr_err("Couldn't Disable slave in Taper, rc=%d\n",
-				       rc);
-				goto out;
+			smb1390_dbg(chip, PR_INFO, "taper work reducing FCC to %duA, is_cp_disabled:%d\n",
+				fcc_uA, is_cp_disabled);
+			if (!is_cp_disabled) {
+				smb1390_dbg(chip, PR_INFO, "cp is disabled, skip vote\n");
+				vote(chip->fcc_votable, CP_VOTER, true, fcc_uA);
+				rc = smb1390_validate_slave_chg_taper(chip, (fcc_uA -
+								      main_fcc_ua));
+				if (rc < 0) {
+					pr_err("Couldn't Disable slave in Taper, rc=%d\n",
+					       rc);
+					goto out;
+				}
 			}
-
+			smb1390_dbg(chip, PR_INFO, "fcc_uA = %duA ,main_fcc_ua = %duA,min_ilim_ua = %duA\n",
+				fcc_uA, main_fcc_ua, chip->min_ilim_ua);
 			/*
 			 * fcc and fcc_main are the same for VPH config, hence
 			 * reduce fcc_main from fcc only in VBAT (output config)
@@ -1316,6 +1326,8 @@ static void smb1390_taper_work(struct work_struct *work)
 				 * on ICL to enable Main charger to pump
 				 * charging current.
 				 */
+				smb1390_dbg(chip, PR_INFO, "cp is disabled, usb_icl_votable = %s\n",
+					chip->usb_icl_votable);
 				if (chip->usb_icl_votable)
 					vote_override(chip->usb_icl_votable,
 						TAPER_MAIN_ICL_LIMIT_VOTER,
@@ -1706,9 +1718,11 @@ static int smb1390_init_hw(struct smb1390 *chip)
 	 *  - Configure VOUT tracking value to 1.0
 	 */
 	rc = smb1390_masked_write(chip, CORE_FTRIM_LVL_REG,
-			CFG_WIN_HI_MASK, WIN_OV_LVL_1000MV);
-	if (rc < 0)
+			CFG_WIN_HI_MASK, /* WIN_OV_LVL_1000MV */WIN_OV_LVL_1200MV);
+	if (rc < 0) {
+		pr_err("Failed to write CORE_FTRIM_LVL_REG rc=%d\n", rc);
 		return rc;
+	}
 
 	rc = smb1390_masked_write(chip, CORE_FTRIM_MISC_REG,
 			TR_WIN_1P5X_BIT, WINDOW_DETECTION_DELTA_X1P0);

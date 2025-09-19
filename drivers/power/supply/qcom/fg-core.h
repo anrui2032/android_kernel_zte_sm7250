@@ -78,6 +78,8 @@
 
 #define DEBUG_BOARD_VOTER	"fg_debug_board"
 
+#define FG_RECHARGE_SOC_VOTER		"fg_vote_recharge_soc"
+
 #define BUCKET_COUNT			8
 #define BUCKET_SOC_PCT			(256 / BUCKET_COUNT)
 
@@ -332,6 +334,7 @@ struct fg_batt_props {
 	int		therm_pull_up_kohms;
 	int		*rslow_normal_coeffs;
 	int		*rslow_low_coeffs;
+	int     full_design_uah;
 };
 
 struct fg_cyc_ctr_data {
@@ -539,6 +542,8 @@ extern int fg_decode_current_24b(struct fg_sram_param *sp,
 extern int fg_decode_cc_soc(struct fg_sram_param *sp,
 	enum fg_sram_param_id id, int value);
 extern int fg_decode_value_16b(struct fg_sram_param *sp,
+	enum fg_sram_param_id id, int val);
+extern int fg_decode_value_32b(struct fg_sram_param *sp,
 	enum fg_sram_param_id id, int val);
 extern int fg_decode_default(struct fg_sram_param *sp,
 	enum fg_sram_param_id id, int val);

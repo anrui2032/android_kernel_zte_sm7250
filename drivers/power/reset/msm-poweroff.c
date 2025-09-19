@@ -27,6 +27,8 @@
 #include <soc/qcom/watchdog.h>
 #include <soc/qcom/minidump.h>
 
+#include <vendor/soc/qcom/debug_policy.h>
+
 #define EMERGENCY_DLOAD_MAGIC1    0x322A4F99
 #define EMERGENCY_DLOAD_MAGIC2    0xC67E4350
 #define EMERGENCY_DLOAD_MAGIC3    0x77777777
@@ -178,6 +180,9 @@ static void set_dload_mode(int on)
 	if (ret)
 		pr_err("Failed to set secure DLOAD mode: %d\n", ret);
 
+	/* zte add kernel log */
+	pr_notice("zte_restart_dload set %d to %d\n",
+		dload_mode_enabled, on);
 	dload_mode_enabled = on;
 }
 
@@ -464,6 +469,9 @@ static void halt_spmi_pmic_arbiter(void)
 	}
 }
 
+static int restart_type;
+module_param_call(restart_type, param_set_int, param_get_int, &restart_type, 0644);
+
 static void msm_restart_prepare(const char *cmd)
 {
 	bool need_warm_reset = false;
@@ -481,6 +489,15 @@ static void msm_restart_prepare(const char *cmd)
 			((cmd != NULL && cmd[0] != '\0') &&
 			!strcmp(cmd, "edl")))
 			need_warm_reset = true;
+#ifdef CONFIG_ZTE_BOOT_MODE
+		if ((cmd != NULL && cmd[0] != '\0') &&
+			!strcmp(cmd, "LONGPRESS"))
+			need_warm_reset = download_mode ? true : false;
+#endif
+		if (restart_type) {
+			pr_info("set restart type to warm reset\n");
+			need_warm_reset = true;
+		}
 	} else {
 		need_warm_reset = (get_dload_mode() ||
 				(cmd != NULL && cmd[0] != '\0'));
@@ -490,10 +507,14 @@ static void msm_restart_prepare(const char *cmd)
 		pr_info("Forcing a warm reset of the system\n");
 
 	/* Hard reset the PMIC unless memory contents must be maintained. */
-	if (force_warm_reboot || need_warm_reset)
+	if (force_warm_reboot || need_warm_reset) {
+		/* zte add kernel log */
+		pr_notice("zte_restart_dload flags %d, %d, %d\n",
+			in_panic, download_mode, restart_mode);
 		qpnp_pon_system_pwr_off(PON_POWER_OFF_WARM_RESET);
-	else
+	} else {
 		qpnp_pon_system_pwr_off(PON_POWER_OFF_HARD_RESET);
+	}
 
 	if (cmd != NULL) {
 		if (!strncmp(cmd, "bootloader", 10)) {
@@ -530,6 +551,10 @@ static void msm_restart_prepare(const char *cmd)
 					     restart_reason);
 		} else if (!strncmp(cmd, "edl", 3)) {
 			enable_emergency_dload_mode();
+		} else if (!strcmp(cmd, "ftmmode")) {
+			qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_FTMMODE);
+			__raw_writel(0x776655ee, restart_reason);
 		} else {
 			__raw_writel(0x77665501, restart_reason);
 		}
@@ -643,6 +668,13 @@ static int msm_restart_probe(struct platform_device *pdev)
 
 	if (scm_is_call_available(SCM_SVC_PWR, SCM_IO_DEASSERT_PS_HOLD) > 0)
 		scm_deassert_ps_hold_supported = true;
+
+#ifdef CONFIG_ANDROID_ZLOG
+#ifdef CONFIG_ANDROID_ZLOG_BUFFER
+	if (!is_kernel_log_driver_enabled())
+		download_mode = 0;
+#endif
+#endif
 
 	set_dload_mode(download_mode);
 	if (!download_mode)

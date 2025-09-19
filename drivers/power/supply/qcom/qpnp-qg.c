@@ -37,8 +37,9 @@
 #include "qg-battery-profile.h"
 #include "qg-defs.h"
 
-static int qg_debug_mask;
+static int qg_debug_mask = 0x0449;
 
+int batt_full_design_capacity = 0;
 static int qg_esr_mod_count = 30;
 static ssize_t esr_mod_count_show(struct device *dev, struct device_attribute
 				     *attr, char *buf)
@@ -1202,11 +1203,18 @@ done:
 	return rc;
 }
 
+
+/*
+ * cc_soc changed more then DELTA_SOC_DECREASE will
+ * trigger catch_up_soc decrease one percent
+ */
+#define DELTA_SOC_DECREASE		200
 static void process_udata_work(struct work_struct *work)
 {
 	struct qpnp_qg *chip = container_of(work,
 			struct qpnp_qg, udata_work);
 	int rc;
+	int smooth_times = 0, smooth_catch_up_soc = -EINVAL;
 
 	if (chip->udata.param[QG_CC_SOC].valid)
 		chip->cc_soc = chip->udata.param[QG_CC_SOC].data;
@@ -1226,6 +1234,14 @@ static void process_udata_work(struct work_struct *work)
 	if (chip->udata.param[QG_SOC].valid ||
 			chip->udata.param[QG_SYS_SOC].valid) {
 
+		if (chip->batt_soc > chip->full_soc && is_input_present(chip)) {
+			/* store the max batt_soc during charging */
+			chip->batt_soc_charged = chip->batt_soc;
+		} else if (chip->batt_soc < chip->full_soc && is_input_present(chip)) {
+			/* if batt_soc is below 100% and is charging, reset batt_soc_charged */
+			chip->batt_soc_charged = -EINVAL;
+		}
+
 		qg_dbg(chip, QG_DEBUG_SOC, "udata update: QG_SOC=%d QG_SYS_SOC=%d last_catchup_soc=%d\n",
 				chip->udata.param[QG_SOC].valid ?
 				chip->udata.param[QG_SOC].data : -EINVAL,
@@ -1238,6 +1254,36 @@ static void process_udata_work(struct work_struct *work)
 			chip->catch_up_soc = qg_adjust_sys_soc(chip);
 		} else {
 			chip->catch_up_soc = chip->udata.param[QG_SOC].data;
+		}
+
+		/* add for 100% last too long
+		 * we will decrease catch_up_soc when cc_soc drop more then DELTA_SOC_DECREASE
+		 * we will continue calculate catch_up_soc when smooth_times reached, smooth_times
+		 * is calculated from batt_soc_charged and full_soc, and if origin catch_up_soc is
+		 * below calculated catch_up_soc, use the origin one
+		 */
+		smooth_times = (chip->batt_soc_charged - chip->full_soc) / DELTA_SOC_DECREASE;
+		smooth_times = smooth_times + 100 * smooth_times / DELTA_SOC_DECREASE;
+		qg_dbg(chip, QG_DEBUG_SOC, "smooth_times=%d\n", smooth_times);
+		if (!is_input_present(chip) && chip->catch_up_soc >= QG_SOC_FULL/100 - smooth_times) {
+			if (chip->catch_up_soc >= QG_SOC_FULL/100 - smooth_times) {
+				qg_dbg(chip, QG_DEBUG_SOC, "batt_soc_charged=%d\n", chip->batt_soc_charged);
+				if ((chip->batt_soc_charged - chip->full_soc) > DELTA_SOC_DECREASE) {
+					smooth_catch_up_soc = QG_SOC_FULL/100
+						- (chip->batt_soc_charged - chip->batt_soc) / DELTA_SOC_DECREASE;
+					/* select the smaller one */
+					if (chip->catch_up_soc > smooth_catch_up_soc) {
+						chip->catch_up_soc = smooth_catch_up_soc;
+						qg_dbg(chip, QG_DEBUG_SOC, "decrease catch_up_soc to %d\n",
+								chip->catch_up_soc);
+					} else {
+						qg_dbg(chip, QG_DEBUG_SOC, "use origin catch_up_soc: %d\n",
+								chip->catch_up_soc);
+					}
+				}
+			} else {
+				chip->batt_soc_charged = -EINVAL;
+			}
 		}
 
 		qg_scale_soc(chip, chip->force_soc);
@@ -1570,6 +1616,23 @@ static int qg_good_ocv_irq_disable_cb(struct votable *votable, void *data,
 	return 0;
 }
 
+static int qg_topoff_current_cb(struct votable *votable, void *data,
+				int currnet, const char *client)
+{
+	struct qpnp_qg *chip = data;
+
+	if (chip == NULL) {
+		pr_err("Qg: chip is null when setting topoff\n");
+		return 0;
+	}
+
+	pr_info("Qg: %s topoff(100%) currnet: %d\n", client, currnet);
+
+	chip->dt.iterm_ma = currnet;
+
+	return 0;
+}
+
 /* ALG callback functions below */
 
 static int qg_get_learned_capacity(void *data, int64_t *learned_cap_uah)
@@ -1617,6 +1680,11 @@ static int qg_store_learned_capacity(void *data, int64_t learned_cap_uah)
 
 	qg_dbg(chip, QG_DEBUG_ALG_CL, "Stored learned capacity %llduah\n",
 					learned_cap_uah);
+
+	if (chip->qg_psy) {
+		qg_dbg(chip, QG_DEBUG_STATUS, "Notfiy BRD to save capacity\n");
+		power_supply_changed(chip->qg_psy);
+	}
 	return 0;
 }
 
@@ -1758,8 +1826,12 @@ static const char *qg_get_battery_type(struct qpnp_qg *chip)
 #define BATT_MISSING_SOC	50
 #define EMPTY_SOC		0
 #define FULL_SOC		100
+#define BATT_COOL_THRESHOLD 100
 static int qg_get_battery_capacity(struct qpnp_qg *chip, int *soc)
 {
+	int batt_temp = 0, vbatt_uv = 0;
+	int rc = 0;
+
 	if (is_debug_batt_id(chip)) {
 		*soc = DEBUG_BATT_SOC;
 		return 0;
@@ -1782,6 +1854,23 @@ static int qg_get_battery_capacity(struct qpnp_qg *chip, int *soc)
 	else
 		*soc = chip->msoc;
 
+	if (*soc == 0) {
+		rc = qg_get_battery_temp(chip, &batt_temp);
+		if (rc < 0) {
+			pr_err("Error in getting batt_temp\n");
+			return 0;
+		}
+		rc = qg_get_battery_voltage(chip, &vbatt_uv);
+		if (rc < 0) {
+			pr_err("Error in getting vbatt_uv\n");
+			return 0;
+		}
+		if (batt_temp >= BATT_COOL_THRESHOLD && vbatt_uv >= (chip->dt.vbatt_cutoff_mv * 1000)) {
+			pr_info("FG: change soc from 0 to 1, temp:%d, vbat:%d\n",
+				batt_temp, vbatt_uv);
+			*soc = 1;
+		}
+	}
 	mutex_unlock(&chip->soc_lock);
 
 	return 0;
@@ -2134,6 +2223,10 @@ static int qg_psy_set_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_BATT_AGE_LEVEL:
 		rc = qg_setprop_batt_age_level(chip, pval->intval);
 		break;
+	case POWER_SUPPLY_PROP_CHARGE_TERM_CURRENT:
+		vote(chip->topoff_votable, CAS_SETTING_VOTER,
+						(pval->intval > 0), pval->intval + 50);
+		break;
 	default:
 		break;
 	}
@@ -2225,6 +2318,7 @@ static int qg_psy_get_property(struct power_supply *psy,
 		rc = qg_get_nominal_capacity((int *)&temp, 250, true);
 		if (!rc)
 			pval->intval = (int)temp;
+		pval->intval = chip->dt.full_design_uah;
 		break;
 	case POWER_SUPPLY_PROP_CYCLE_COUNTS:
 		rc = get_cycle_counts(chip->counter, &pval->strval);
@@ -2241,6 +2335,7 @@ static int qg_psy_get_property(struct power_supply *psy,
 		rc = ttf_get_time_to_full(chip->ttf, &pval->intval);
 		break;
 	case POWER_SUPPLY_PROP_TIME_TO_EMPTY_AVG:
+	case POWER_SUPPLY_PROP_TIME_TO_EMPTY_NOW:
 		rc = ttf_get_time_to_empty(chip->ttf, &pval->intval);
 		break;
 	case POWER_SUPPLY_PROP_ESR_ACTUAL:
@@ -2275,6 +2370,9 @@ static int qg_psy_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_BATT_AGE_LEVEL:
 		pval->intval = chip->batt_age_level;
 		break;
+	case POWER_SUPPLY_PROP_CHARGE_TERM_CURRENT:
+		pval->intval = chip->dt.iterm_ma;
+		break;
 	case POWER_SUPPLY_PROP_FG_TYPE:
 		pval->intval = chip->qg_mode;
 		break;
@@ -2293,6 +2391,8 @@ static int qg_property_is_writeable(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CHARGE_FULL:
 	case POWER_SUPPLY_PROP_ESR_ACTUAL:
 	case POWER_SUPPLY_PROP_ESR_NOMINAL:
+	case POWER_SUPPLY_PROP_SOC_REPORTING_READY:
+	case POWER_SUPPLY_PROP_CHARGE_TERM_CURRENT:
 	case POWER_SUPPLY_PROP_SOH:
 	case POWER_SUPPLY_PROP_FG_RESET:
 	case POWER_SUPPLY_PROP_BATT_AGE_LEVEL:
@@ -2317,6 +2417,7 @@ static enum power_supply_property qg_psy_props[] = {
 	POWER_SUPPLY_PROP_RESISTANCE_ID,
 	POWER_SUPPLY_PROP_RESISTANCE_NOW,
 	POWER_SUPPLY_PROP_SOC_REPORTING_READY,
+	POWER_SUPPLY_PROP_CHARGE_TERM_CURRENT,
 	POWER_SUPPLY_PROP_RESISTANCE_CAPACITIVE,
 	POWER_SUPPLY_PROP_DEBUG_BATTERY,
 	POWER_SUPPLY_PROP_BATTERY_TYPE,
@@ -2331,6 +2432,8 @@ static enum power_supply_property qg_psy_props[] = {
 	POWER_SUPPLY_PROP_TIME_TO_FULL_AVG,
 	POWER_SUPPLY_PROP_TIME_TO_FULL_NOW,
 	POWER_SUPPLY_PROP_TIME_TO_EMPTY_AVG,
+	POWER_SUPPLY_PROP_TIME_TO_FULL_NOW,
+	POWER_SUPPLY_PROP_TIME_TO_EMPTY_NOW,
 	POWER_SUPPLY_PROP_ESR_ACTUAL,
 	POWER_SUPPLY_PROP_ESR_NOMINAL,
 	POWER_SUPPLY_PROP_SOH,
@@ -2402,6 +2505,11 @@ static int qg_charge_full_update(struct qpnp_qg *chip)
 			qg_dbg(chip, QG_DEBUG_STATUS, "Setting charge_full (0->1) @ msoc=%d\n",
 					chip->msoc);
 		} else if (health != POWER_SUPPLY_HEALTH_GOOD) {
+			if (health == POWER_SUPPLY_HEALTH_COOL) {
+				chip->charge_full = true;
+				qg_dbg(chip, QG_DEBUG_STATUS, "Setting charge_full (0->1) @ msoc=%d\n",
+					chip->msoc);
+			} else
 			/* terminated in JEITA */
 			qg_dbg(chip, QG_DEBUG_STATUS, "Terminated charging @ msoc=%d\n",
 					chip->msoc);
@@ -3130,6 +3238,13 @@ static int qg_load_battery_profile(struct qpnp_qg *chip)
 		}
 	}
 
+	rc = of_property_read_u32(profile_node, "qcom,full-design-uah",
+		&chip->dt.full_design_uah);
+	if (rc < 0) {
+		pr_err("battery capacity mah unavailable, rc:%d\n", rc);
+		chip->dt.full_design_uah = -EINVAL;
+	}
+	batt_full_design_capacity = chip->dt.full_design_uah;
 	qg_dbg(chip, QG_DEBUG_PROFILE, "profile=%s FV=%duV FCC=%dma\n",
 			chip->bp.batt_type_str, chip->bp.float_volt_uv,
 			chip->bp.fastchg_curr_ma);
@@ -3394,6 +3509,8 @@ static int qg_set_wa_flags(struct qpnp_qg *chip)
 		qg_esr_mod_count = 10;
 		break;
 	case PM7250B_SUBTYPE:
+		if (!chip->dt.use_s7_ocv)
+			chip->wa_flags |= QG_PON_OCV_WA;
 		qg_esr_mod_count = 10;
 		break;
 	case PM2250_SUBTYPE:
@@ -3724,6 +3841,7 @@ static int qg_soh_batt_profile_init(struct qpnp_qg *chip)
 
 static int qg_post_init(struct qpnp_qg *chip)
 {
+	u8 status = 0;
 	int rc = 0;
 
 	/* disable all IRQs if profile is not loaded */
@@ -3740,6 +3858,9 @@ static int qg_post_init(struct qpnp_qg *chip)
 	if (!chip->dt.esr_disable)
 		qg_retrieve_esr_params(chip);
 
+	/* read STATUS2 register to clear its last state */
+	qg_read(chip, chip->qg_base + QG_STATUS2_REG, &status, 1);
+
 	/*soh based multi profile init */
 	rc = qg_soh_batt_profile_init(chip);
 	if (rc < 0) {
@@ -3747,6 +3868,9 @@ static int qg_post_init(struct qpnp_qg *chip)
 								rc);
 		return rc;
 	}
+
+	vote(chip->topoff_votable, QG_DEFAULT_VOTER,
+							true, chip->dt.iterm_ma);
 
 	return 0;
 }
@@ -4298,6 +4422,9 @@ static int qg_parse_dt(struct qpnp_qg *chip)
 	else
 		chip->dt.iterm_ma = temp;
 
+	chip->dt.iterm_ma_backup = chip->dt.iterm_ma;
+	pr_info("qg-iterm-ma set to %d\n", chip->dt.iterm_ma);
+
 	rc = of_property_read_u32(node, "qcom,delta-soc", &temp);
 	if (rc < 0)
 		chip->dt.delta_soc = DEFAULT_DELTA_SOC;
@@ -4719,6 +4846,7 @@ static int qpnp_qg_probe(struct platform_device *pdev)
 	chip->maint_soc = -EINVAL;
 	chip->batt_soc = INT_MIN;
 	chip->cc_soc = INT_MIN;
+	chip->batt_soc_charged = -EINVAL;
 	chip->sys_soc = INT_MIN;
 	chip->full_soc = QG_SOC_FULL;
 	chip->chg_iterm_ma = INT_MIN;
@@ -4850,6 +4978,14 @@ static int qpnp_qg_probe(struct platform_device *pdev)
 	if (IS_ERR(chip->good_ocv_irq_disable_votable)) {
 		rc = PTR_ERR(chip->good_ocv_irq_disable_votable);
 		chip->good_ocv_irq_disable_votable = NULL;
+		goto fail_device;
+	}
+
+	chip->topoff_votable = create_votable("TOPOFF",
+				VOTE_MAX, qg_topoff_current_cb, chip);
+	if (IS_ERR(chip->topoff_votable)) {
+		rc = PTR_ERR(chip->topoff_votable);
+		chip->topoff_votable = NULL;
 		goto fail_device;
 	}
 
