@@ -2421,6 +2421,11 @@ long _do_fork(unsigned long clone_flags,
 	 */
 	trace_sched_process_fork(current, p);
 
+#ifdef CONFIG_UID_PAGELIST
+	if (!(clone_flags & CLONE_VM))
+		p->hotness = 0;
+#endif
+
 	pid = get_task_pid(p, PIDTYPE_PID);
 	nr = pid_vnr(pid);
 

@@ -56,6 +56,18 @@
 #include <asm/siginfo.h>
 #include <asm/cacheflush.h>
 #include "audit.h"	/* audit_signal_info() */
+/**** ZSW_ADD FOR CPUFREEZER begin ****/
+#include <stdbool.h>
+
+#ifndef ZTE_FEATURE_CGROUP_FREEZER
+#define ZTE_FEATURE_CGROUP_FREEZER               false
+#endif
+
+#ifndef ZTE_FEATURE_CGROUP_FREEZER_V2
+#define ZTE_FEATURE_CGROUP_FREEZER_V2            false
+#endif
+
+/**** ZSW_ADD FOR CPUFREEZER end ****/
 
 /*
  * SLAB caches for signal bits.
@@ -1216,6 +1228,16 @@ static int send_signal(int sig, struct siginfo *info, struct task_struct *t,
 			   !task_pid_nr_ns(current, task_active_pid_ns(t));
 #endif
 
+/* ZSW_ADD FOR CPUFREEZER begin */
+#if (ZTE_FEATURE_CGROUP_FREEZER == true || ZTE_FEATURE_CGROUP_FREEZER_V2 == true)
+	if (sig == SIGQUIT || sig == SIGABRT || sig == SIGKILL || sig == SIGSEGV) {
+		if (cgroup_needunfreeze_task(t)) {
+			cgroup_signal_unfreeze(t);
+			pr_info("kill task %d  need to unfreeze\n", t->pid);
+		}
+	}
+#endif
+/* ZSW_ADD FOR CPUFREEZER end */
 	return __send_signal(sig, info, t, type, from_ancestor_ns);
 }
 
