@@ -43,6 +43,7 @@
 		swr0 = &swr0;
 		swr1 = &swr1;
 		swr2 = &swr2;
+		i2c7 = &qupv3_se7_i2c;
 	};
 
 	cpus {
@@ -499,6 +500,12 @@
 			alignment = <0x0 0x400000>;
 			size = <0x0 0x2000000>;
 			linux,cma-default;
+		};
+
+		pstore_mem: pstore_region@bb5ff000 {
+			compatible = "removed-dma-pool";
+			no-map;
+			reg = <0x0 0xbb5ff000 0x0 0x200000>;
 		};
 	};
 };
@@ -3245,6 +3252,20 @@
 		};
 	};
 
+	ramoops {
+		compatible = "ramoops";
+		reg = <0xbb5ff000 0x200000>;
+		memory-region = <&pstore_mem>;
+		unbuffered;
+		no-dump-oops;
+		record-size = <0x1000>;
+		console-size = <0x100000>;
+		ftrace-size = <0x40000>;
+		pmsg-size = <0x40000>;
+		ecc-size = <0x0>;
+		flags = <1>;
+	};
+
 	qfprom: qfprom@780000 {
 		compatible = "qcom,qfprom";
 		reg = <0x00780000 0x7000>;
@@ -3848,6 +3869,7 @@
 };
 
 &pm7250b_charger {
+	qcom,thermal-mitigation = <5400000 4500000 4000000 3500000 3000000 2500000 2000000 1500000 1000000 500000>;
 	dpdm-supply = <&qusb_phy0>;
 
 	smb5_vbus: qcom,smb5-vbus {
@@ -4072,6 +4094,10 @@
 	vdd-pdphy-supply = <&L3A>;
 	vbus-supply = <&smb5_vbus>;
 	vconn-supply = <&smb5_vconn>;
+};
+
+&pm7250b_qg {
+	qcom,vbatt-cutoff-mv = <3200>;
 };
 
 &usb0 {
